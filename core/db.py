@@ -174,6 +174,26 @@ def list_nutrient_defs(enabled_only=False):
         return [dict(row) for row in conn.execute(q)]
 
 
+def create_nutrient_def(key, label, unit, category="other", direction="higher_better",
+                         target_mode="flat", target_value=0, sort_order=None):
+    """Adds a custom nutrient (e.g. "Omega-3", "Caffeine"). Once created it
+    behaves exactly like a built-in one -- shows up in day summaries, the
+    dashboard, and weekly reports as soon as anything logs a value for it."""
+    key = key.strip().lower().replace(" ", "_")
+    if not key:
+        raise ValueError("nutrient key cannot be empty")
+    with get_conn() as conn:
+        if sort_order is None:
+            row = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM nutrient_defs").fetchone()
+            sort_order = row["n"]
+        conn.execute(
+            "INSERT INTO nutrient_defs (key, label, unit, category, direction, "
+            "target_mode, target_value, enabled, sort_order) VALUES (?,?,?,?,?,?,?,1,?)",
+            (key, label, unit, category, direction, target_mode, target_value, sort_order),
+        )
+    return key
+
+
 def update_nutrient_def(key, **fields):
     if not fields:
         return

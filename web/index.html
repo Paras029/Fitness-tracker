@@ -291,6 +291,21 @@
   .modal .field label{ font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:'IBM Plex Mono',monospace; }
   .modal .field input{ border:1px solid var(--line-strong); border-radius:7px; padding:8px 10px; font-size:13.5px; background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; }
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+  .modal.wide{ width:480px; max-height:82vh; overflow-y:auto; }
+  .modal-section-label{ font-size:12px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:'IBM Plex Mono',monospace; margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--line); }
+  .modal-section-label:first-of-type{ margin-top:0; padding-top:0; border-top:none; }
+  .nutrient-row{ display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .nutrient-row label{ display:flex; align-items:center; gap:8px; flex:1; cursor:pointer; }
+  .nutrient-row .cat{ color:var(--ink-faint); font-size:11px; }
+  .nutrient-row input[type="number"]{ width:64px; border:1px solid var(--line-strong); border-radius:6px; padding:5px 7px; font-size:12.5px; background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; }
+  .nutrient-row .unit{ color:var(--ink-faint); font-size:11px; width:30px; }
+  .field-row{ display:flex; gap:8px; }
+  .field-row .field{ flex:1; }
+  .saved-meal-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .saved-meal-row:last-child{ border-bottom:none; }
+  .saved-meal-row .smname{ flex:1; font-weight:600; }
+  .saved-meal-row .smkcal{ color:var(--ink-faint); font-size:12px; }
+  .saved-meal-row select{ font-size:12px; border:1px solid var(--line-strong); border-radius:6px; padding:5px 6px; background:var(--paper-sunk); color:var(--ink); font-family:'Instrument Sans'; }
   .toast{
     position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(8px);
     background:var(--ink); color:var(--paper); padding:9px 16px; border-radius:8px; font-size:13px;
@@ -324,7 +339,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3c-4 3-6 6.5-6 10a6 6 0 0 0 12 0c0-3.5-2-7-6-10Z"/><path d="M12 3v18"/></svg>
       </div>
     </nav>
-    <div class="sidebar-foot">
+    <div class="sidebar-foot" style="display:flex; flex-direction:column; gap:8px;">
+      <button class="theme-toggle" id="settingsToggle" aria-label="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.36.22.75.22 1.15"/></svg>
+      </button>
       <button class="theme-toggle" id="themeToggle" aria-label="Toggle color theme">
         <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
       </button>
@@ -469,10 +487,17 @@
               </div>
               <div style="display:flex; gap:8px;">
                 <button class="btn btn-ghost" id="parsedCancel">Discard</button>
+                <button class="btn btn-ghost" id="parsedSaveMeal">Save as meal</button>
                 <button class="btn btn-primary" id="parsedAdd">Add to log</button>
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="card quickadd-card" id="savedMealsCard">
+          <h3 class="section-label">Saved meals</h3>
+          <div class="section-sub">One-tap re-log for things you eat often.</div>
+          <div id="savedMealsList" style="margin-top:12px;"></div>
         </div>
 
         <div class="card ledger-card">
@@ -521,6 +546,36 @@
     </div>
   </div>
 </div>
+
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal wide">
+    <h3>Settings</h3>
+
+    <div class="modal-section-label">Profile</div>
+    <div class="field"><label>Bodyweight (kg)</label><input id="settingsBodyweight" type="number"></div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button class="btn btn-ghost" id="saveProfileBtn" style="padding:6px 12px; font-size:12px;">Save</button>
+    </div>
+
+    <div class="modal-section-label">Tracked nutrients -- toggle or retarget, changes apply everywhere</div>
+    <div id="nutrientSettingsList"></div>
+
+    <div class="modal-section-label">Add a custom nutrient</div>
+    <div class="field"><label>Name</label><input id="newNutrientLabel" type="text" placeholder="e.g. Omega-3"></div>
+    <div class="field-row">
+      <div class="field"><label>Unit</label><input id="newNutrientUnit" type="text" placeholder="g / mg / mcg"></div>
+      <div class="field"><label>Daily target</label><input id="newNutrientTarget" type="number" placeholder="0"></div>
+    </div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button class="btn btn-primary" id="addNutrientBtn" style="padding:6px 12px; font-size:12px;">Add nutrient</button>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="settingsClose">Done</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -545,6 +600,13 @@
     applyThemeIcon();
   });
   applyThemeIcon();
+
+  var settingsModal = document.getElementById('settingsModal');
+  document.getElementById('settingsToggle').addEventListener('click', openSettings);
+  document.getElementById('settingsClose').addEventListener('click', function(){
+    settingsModal.classList.remove('show');
+    loadDay(state.date); // pick up any enabled/disabled/target changes immediately
+  });
 
   function toast(msg){
     var t = document.getElementById('toast');
@@ -574,6 +636,13 @@
     confirm: function(items, mealSlot, date){ return fetch('/api/quickadd/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items:items, meal_slot:mealSlot, date:date})}).then(r=>r.json()); },
     report: function(){ return fetch('/api/report/weekly').then(r=>r.json()); },
     ask: function(question, date){ return fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:question, date:date})}).then(r=>r.json()); },
+    nutrientDefs: function(){ return fetch('/api/settings/nutrients').then(r=>r.json()); },
+    updateNutrient: function(key, body){ return fetch('/api/settings/nutrients/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    createNutrient: function(body){ return fetch('/api/settings/nutrients', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
+    profile: function(){ return fetch('/api/settings/profile').then(r=>r.json()); },
+    putProfile: function(body){ return fetch('/api/settings/profile', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    savedMeals: function(){ return fetch('/api/saved-meals').then(r=>r.json()); },
+    createSavedMeal: function(name, items){ return fetch('/api/saved-meals', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name, items:items})}).then(r=>r.json()); },
   };
 
   var MACRO_COLOR = {protein:'var(--protein)', carbs:'var(--carbs)', fat:'var(--fat)', fiber:'var(--fiber)'};
@@ -996,10 +1065,114 @@
   document.getElementById('askSend').addEventListener('click', sendAsk);
   askInput.addEventListener('keydown', function(e){ if(e.key==='Enter') sendAsk(); });
 
+  // ---------------- settings ----------------
+
+  function openSettings(){
+    settingsModal.classList.add('show');
+    api.profile().then(function(p){
+      document.getElementById('settingsBodyweight').value = p.bodyweight_kg || '';
+    });
+    loadNutrientSettings();
+  }
+
+  function loadNutrientSettings(){
+    var list = document.getElementById('nutrientSettingsList');
+    list.innerHTML = '<div class="miss">Loading…</div>';
+    api.nutrientDefs().then(function(defs){
+      list.innerHTML = '';
+      defs.forEach(function(d){
+        var row = document.createElement('div');
+        row.className = 'nutrient-row';
+        var targetUnit = d.unit;
+        var modeNote = '';
+        if(d.target_mode === 'pct_kcal'){ targetUnit = '%'; modeNote = ' of calories'; }
+        else if(d.target_mode === 'per_kg_bodyweight'){ targetUnit = d.unit + '/kg'; modeNote = ' per kg bodyweight'; }
+        row.innerHTML =
+          '<label><input type="checkbox" class="nut-enabled" ' + (d.enabled ? 'checked' : '') + '>' +
+          '<span>' + d.label + ' <span class="cat">(' + d.category + (modeNote ? ',' + modeNote : '') + ')</span></span></label>' +
+          '<input type="number" class="nut-target" value="' + (d.target_value != null ? d.target_value : 0) + '" step="any">' +
+          '<span class="unit">' + targetUnit + '</span>';
+        var checkbox = row.querySelector('.nut-enabled');
+        var targetInput = row.querySelector('.nut-target');
+        checkbox.addEventListener('change', function(){
+          api.updateNutrient(d.key, {enabled: checkbox.checked ? 1 : 0}).then(function(){ toast(d.label + (checkbox.checked ? ' enabled' : ' hidden') + '.'); });
+        });
+        targetInput.addEventListener('change', function(){
+          api.updateNutrient(d.key, {target_value: parseFloat(targetInput.value) || 0}).then(function(){ toast(d.label + ' target updated.'); });
+        });
+        list.appendChild(row);
+      });
+    });
+  }
+
+  document.getElementById('saveProfileBtn').addEventListener('click', function(){
+    var kg = parseFloat(document.getElementById('settingsBodyweight').value) || 0;
+    api.putProfile({bodyweight_kg: kg}).then(function(){ toast('Profile saved.'); });
+  });
+
+  document.getElementById('addNutrientBtn').addEventListener('click', function(){
+    var label = document.getElementById('newNutrientLabel').value.trim();
+    var unit = document.getElementById('newNutrientUnit').value.trim() || 'g';
+    var target = parseFloat(document.getElementById('newNutrientTarget').value) || 0;
+    if(!label){ toast('Give the nutrient a name first.'); return; }
+    api.createNutrient({key: label, label: label, unit: unit, category: 'micro', target_mode: 'flat', target_value: target}).then(function(res){
+      if(!res.ok){ toast(res.data.error || 'Could not add nutrient.'); return; }
+      toast(label + ' added.');
+      document.getElementById('newNutrientLabel').value = '';
+      document.getElementById('newNutrientUnit').value = '';
+      document.getElementById('newNutrientTarget').value = '';
+      loadNutrientSettings();
+    });
+  });
+
+  // ---------------- saved meals ----------------
+
+  function loadSavedMeals(){
+    var list = document.getElementById('savedMealsList');
+    api.savedMeals().then(function(meals){
+      if(!meals.length){
+        list.innerHTML = '<div class="miss">Nothing saved yet -- parse a meal below, then “Save as meal”.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      meals.forEach(function(m){
+        var kcal = m.items.reduce(function(a,it){ return a + (it.nutrients.kcal||0); }, 0);
+        var row = document.createElement('div');
+        row.className = 'saved-meal-row';
+        row.innerHTML =
+          '<span class="smname">' + m.name + '</span>' +
+          '<span class="smkcal num">' + Math.round(kcal) + ' kcal</span>' +
+          '<select class="sm-slot">' +
+            '<option value="breakfast">Breakfast</option><option value="lunch">Lunch</option>' +
+            '<option value="dinner">Dinner</option><option value="snack" selected>Snack</option>' +
+          '</select>' +
+          '<button class="btn btn-primary" style="padding:5px 10px; font-size:12px;">Log</button>';
+        row.querySelector('button').addEventListener('click', function(){
+          var slot = row.querySelector('.sm-slot').value;
+          api.confirm(m.items, slot, state.date).then(function(){
+            toast(m.name + ' logged.'); loadDay(state.date); loadStreak();
+          });
+        });
+        list.appendChild(row);
+      });
+    });
+  }
+
+  document.getElementById('parsedSaveMeal').addEventListener('click', function(){
+    if(!lastParsed.length){ toast('Parse something first.'); return; }
+    var name = window.prompt('Name this meal (e.g. "My usual breakfast"):');
+    if(!name) return;
+    api.createSavedMeal(name.trim(), lastParsed).then(function(){
+      toast('Saved as "' + name.trim() + '".');
+      loadSavedMeals();
+    });
+  });
+
   // ---------------- boot ----------------
   loadDay(state.date);
   loadTrends(state.rangeDays);
   loadStreak();
+  loadSavedMeals();
 })();
 </script>
 </body>

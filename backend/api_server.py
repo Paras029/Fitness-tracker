@@ -99,6 +99,24 @@ def get_nutrient_defs():
     return jsonify(db.list_nutrient_defs())
 
 
+@app.route("/api/settings/nutrients", methods=["POST"])
+def post_nutrient_def():
+    body = request.get_json(force=True)
+    try:
+        key = db.create_nutrient_def(
+            key=body["key"], label=body["label"], unit=body.get("unit", ""),
+            category=body.get("category", "other"), direction=body.get("direction", "higher_better"),
+            target_mode=body.get("target_mode", "flat"), target_value=body.get("target_value", 0),
+        )
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        if "UNIQUE constraint" in str(e):
+            return jsonify({"error": f"a nutrient with key '{body.get('key')}' already exists"}), 409
+        raise
+    return jsonify({"key": key})
+
+
 @app.route("/api/settings/nutrients/<key>", methods=["PUT"])
 def put_nutrient_def(key):
     body = request.get_json(force=True)
