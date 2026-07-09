@@ -13,11 +13,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 
 from core import config, db, logging_service
 
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+
 app = Flask(__name__)
+
+
+@app.route("/")
+def dashboard():
+    return send_from_directory(WEB_DIR, "index.html")
 
 
 @app.after_request
