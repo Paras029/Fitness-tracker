@@ -174,6 +174,13 @@ def post_saved_meal():
 
 # ---------------- quick add (text / photo) ----------------
 # Returns a *draft* -- nothing is saved until /api/quickadd/confirm.
+#
+# extract -> resolve are split into two round trips (rather than one call
+# doing both) specifically so the web UI can render progress between them:
+# ingredients appear as soon as extraction finishes, then macros fill in
+# once resolve finishes, instead of one spinner covering both LLM calls.
+# /api/quickadd/parse (and parse-photo) still do both in one call for
+# anything that doesn't need the staged UI.
 
 @app.route("/api/quickadd/parse", methods=["POST"])
 def quickadd_parse():
@@ -192,6 +199,54 @@ def quickadd_parse_photo():
         image_bytes=photo.read(), mime_type=photo.mimetype or "image/jpeg", caption=caption,
     )
     return jsonify(draft)
+
+
+@app.route("/api/quickadd/extract", methods=["POST"])
+def quickadd_extract():
+    text = request.get_json(force=True).get("text", "")
+    extraction = logging_service.extract_only(text=text)
+    return jsonify(extraction)
+
+
+@app.route("/api/quickadd/extract-photo", methods=["POST"])
+def quickadd_extract_photo():
+    photo = request.files.get("photo")
+    if not photo:
+        return jsonify({"error": "no photo uploaded"}), 400
+    caption = request.form.get("caption", "")
+    extraction = logging_service.extract_only(
+        image_bytes=photo.read(), mime_type=photo.mimetype or "image/jpeg", caption=caption,
+    )
+    return jsonify(extraction)
+
+
+@app.route("/api/quickadd/resolve", methods=["POST"])
+def quickadd_resolve():
+    extraction = request.get_json(force=True)
+    draft = logging_service.resolve_draft(extraction)
+    return jsonify(draft)
+
+
+@app.route("/api/quickadd/sanity", methods=["POST"])
+def quickadd_sanity():
+    draft = request.get_json(force=True)
+    sanity = logging_service.sanity_check(draft)
+    if sanity is None:
+        return jsonify({"error": "Sanity check failed -- check GEMINI_API_KEY / quota with "
+                                  "python -m scripts.check_setup."}), 502
+    return jsonify(sanity)
+
+
+@app.route("/api/quickadd/refine", methods=["POST"])
+def quickadd_refine():
+    body = request.get_json(force=True)
+    draft = {
+        "items": body["items"], "meal_label": body.get("meal_label"),
+        "extraction_confidence": body.get("extraction_confidence"),
+        "raw_input": body.get("raw_input"),
+    }
+    updated, changed = logging_service.refine_meal(draft, body.get("message", ""), sanity=body.get("sanity"))
+    return jsonify({"draft": updated, "changed": changed})
 
 
 @app.route("/api/quickadd/confirm", methods=["POST"])

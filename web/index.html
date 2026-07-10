@@ -205,6 +205,10 @@
     padding:5px 11px; border-radius:6px; cursor:pointer; font-family:'IBM Plex Mono',monospace;
   }
   .seg button.active{ background:var(--accent); color:var(--accent-ink); }
+  .trend-metric-pick{
+    font-size:12px; font-weight:600; border:1px solid var(--line-strong); border-radius:8px;
+    padding:6px 8px; background:var(--paper-raised); color:var(--ink); font-family:'IBM Plex Mono',monospace;
+  }
   .chart-wrap{ position:relative; margin-top:8px; }
   .chart-wrap svg{ width:100%; height:auto; display:block; overflow:visible; }
   .chart-legend{ display:flex; gap:16px; margin-top:6px; padding-bottom:4px; flex-wrap:wrap; }
@@ -235,12 +239,47 @@
   .parsed-item:last-of-type{ border-bottom:none; }
   .parsed-item .pname{ font-weight:600; }
   .parsed-item .pmacros{ color:var(--ink-faint); font-size:11px; }
-  .parsed-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; }
+  .parsed-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:8px; flex-wrap:wrap; }
   .parsed-actions .meal-pick{ display:flex; gap:6px; }
   .parsed-actions select{ font-size:12px; border:1px solid var(--line-strong); border-radius:6px; padding:5px 8px; background:var(--paper-raised); color:var(--ink); font-family:'Instrument Sans'; }
   .miss{ font-size:12.5px; color:var(--ink-muted); }
+  .pi-pending{ opacity:.55; }
+  @keyframes pi-flash-anim{
+    0%{ background:var(--accent-flash, rgba(214,158,46,.28)); }
+    100%{ background:transparent; }
+  }
+  .pi-flash{ animation:pi-flash-anim 1.6s ease-out; border-radius:6px; }
+  .pi-removing{ opacity:.4; text-decoration:line-through; }
+  .sanity-box{
+    display:none; margin-top:10px; padding:9px 11px; border-radius:7px; font-size:12.5px; line-height:1.5;
+    border:1px solid var(--line-strong); background:var(--paper-raised);
+  }
+  .sanity-box.show{ display:block; }
+  .sanity-box.ok{ border-color:var(--good); }
+  .sanity-box.issue{ border-color:var(--critical); }
+  .sanity-box .sb-flag{ margin-top:4px; color:var(--ink-muted); }
+  .sanity-box .sb-flag b{ color:var(--ink); }
+  .refine-row{ display:flex; gap:8px; margin-top:10px; }
+  .refine-row input{
+    flex:1; background:var(--paper-raised); border:1px solid var(--line); border-radius:7px; padding:8px 11px;
+    font-size:12.5px; color:var(--ink); font-family:'Instrument Sans';
+  }
+  .refine-row input:focus{ outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
+  #refineLog{ margin-top:8px; }
+  .refine-note{
+    font-size:12px; color:var(--ink-muted); padding:6px 9px; border-left:2px solid var(--accent);
+    margin-top:6px; background:var(--paper-raised); border-radius:0 6px 6px 0;
+  }
+  .refine-user{
+    font-size:12.5px; color:var(--ink); padding:6px 9px; margin-top:8px;
+    background:var(--paper-sunk); border-radius:6px 6px 0 0; font-weight:600;
+  }
 
   .ledger-card{ padding:20px 22px 14px; }
+  #ledger{ max-height:340px; overflow-y:auto; padding-right:4px; }
+  #savedMealsList{ max-height:132px; overflow-y:auto; padding-right:4px; }
+  #ledger::-webkit-scrollbar, #savedMealsList::-webkit-scrollbar{ width:6px; }
+  #ledger::-webkit-scrollbar-thumb, #savedMealsList::-webkit-scrollbar-thumb{ background:var(--line-strong); border-radius:3px; }
   .slot-group{ margin-top:18px; }
   .slot-group:first-of-type{ margin-top:14px; }
   .slot-title{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
@@ -274,8 +313,10 @@
   .mc-add-row{ display:flex; gap:6px; margin-top:10px; }
   .mc-add-row input{ flex:1; border:1px solid var(--line-strong); border-radius:6px; padding:6px 9px; font-size:12.5px; background:var(--paper-sunk); color:var(--ink); font-family:'Instrument Sans'; }
   .mc-add-row button{ font-size:11.5px; padding:6px 10px; border-radius:6px; border:1px solid var(--line-strong); background:transparent; color:var(--ink-muted); cursor:pointer; }
-  .mc-footer{ display:flex; justify-content:flex-end; margin-top:10px; }
+  .mc-footer{ display:flex; justify-content:flex-end; gap:4px; margin-top:10px; }
   .mc-delete-meal{ font-size:11px; color:var(--critical); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
+  .mc-save-meal{ font-size:11px; color:var(--ink-muted); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
+  .mc-save-meal:hover{ color:var(--ink); }
 
   .insights-card{ padding:18px 20px; }
   .insight-body{ font-size:13px; line-height:1.6; color:var(--ink-muted); }
@@ -451,12 +492,15 @@
         <div class="card trend-card">
           <div class="trend-head">
             <div>
-              <h3 class="section-label">Calorie trend</h3>
+              <h3 class="section-label" id="trendTitle">Calorie trend</h3>
               <div class="section-sub">Daily intake against your goal</div>
             </div>
-            <div class="seg" id="rangeSeg">
-              <button data-range="7" class="active">7D</button>
-              <button data-range="30">30D</button>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <select id="trendMetric" class="trend-metric-pick"></select>
+              <div class="seg" id="rangeSeg">
+                <button data-range="7" class="active">7D</button>
+                <button data-range="30">30D</button>
+              </div>
             </div>
           </div>
           <div class="chart-wrap" id="kcalChartWrap">
@@ -464,7 +508,7 @@
             <div class="tooltip" id="kcalTooltip"></div>
           </div>
           <div class="chart-legend">
-            <div class="legend-item"><span class="sw" style="background:var(--amber)"></span>Intake</div>
+            <div class="legend-item"><span class="sw" id="trendIntakeSw" style="background:var(--amber)"></span>Intake</div>
             <div class="legend-item"><span class="sw" style="background:var(--line-strong)"></span>Goal</div>
           </div>
         </div>
@@ -502,8 +546,14 @@
             <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none;">
           </div>
           <div class="parsed" id="parsedBox">
-            <div class="ph">Parsed</div>
+            <div class="ph" id="parseStatus">Parsed</div>
             <div id="parsedItems"></div>
+            <div id="sanityBox" class="sanity-box"></div>
+            <div id="refineRow" class="refine-row" style="display:none;">
+              <input type="text" id="refineInput" placeholder="Anything to fix? (optional)" />
+              <button class="btn btn-ghost" id="refineBtn">Send</button>
+            </div>
+            <div id="refineLog"></div>
             <div class="parsed-actions">
               <div class="meal-pick">
                 <select id="mealSlotPick">
@@ -513,8 +563,9 @@
                   <option value="snack" selected>Snack</option>
                 </select>
               </div>
-              <div style="display:flex; gap:8px;">
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
                 <button class="btn btn-ghost" id="parsedCancel">Discard</button>
+                <button class="btn btn-ghost" id="sanityBtn">🔍 Double-check</button>
                 <button class="btn btn-ghost" id="parsedSaveMeal">Save as meal</button>
                 <button class="btn btn-primary" id="parsedAdd">Add to log</button>
               </div>
@@ -655,6 +706,19 @@
       fd.append('caption', caption || '');
       return fetch('/api/quickadd/parse-photo', {method:'POST', body: fd}).then(r=>r.json());
     },
+    extract: function(text){ return fetch('/api/quickadd/extract', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:text})}).then(r=>r.json()); },
+    extractPhoto: function(file, caption){
+      var fd = new FormData();
+      fd.append('photo', file);
+      fd.append('caption', caption || '');
+      return fetch('/api/quickadd/extract-photo', {method:'POST', body: fd}).then(r=>r.json());
+    },
+    resolve: function(extraction){ return fetch('/api/quickadd/resolve', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(extraction)}).then(r=>r.json()); },
+    sanity: function(draft){ return fetch('/api/quickadd/sanity', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(draft)}).then(r=>r.json()); },
+    refine: function(draft, message, sanity){
+      var body = Object.assign({}, draft, {message: message, sanity: sanity});
+      return fetch('/api/quickadd/refine', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json());
+    },
     confirm: function(draft, mealSlot, date){
       var body = Object.assign({}, draft, {meal_slot: mealSlot, date: date});
       return fetch('/api/quickadd/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json());
@@ -674,7 +738,7 @@
   var MEAL_ORDER = ['breakfast','lunch','dinner','snack','water'];
   var MEAL_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack', water:'Water'};
 
-  var state = { date: todayISO(), rangeDays: 7, lastDaySummary: null };
+  var state = { date: todayISO(), rangeDays: 7, trendKey: 'kcal', lastDaySummary: null };
 
   // ---------------- day rendering ----------------
 
@@ -889,7 +953,7 @@
         '<input type="text" class="mc-add-input" placeholder="Add an ingredient…">' +
         '<button class="mc-add-btn">Add</button>' +
       '</div>' +
-      '<div class="mc-footer"><button class="mc-delete-meal">Delete whole meal</button></div>';
+      '<div class="mc-footer"><button class="mc-save-meal">Save as meal</button><button class="mc-delete-meal">Delete whole meal</button></div>';
     body.innerHTML = html;
 
     body.querySelectorAll('.mc-item-grams').forEach(function(input){
@@ -932,6 +996,15 @@
     body.querySelector('.mc-delete-meal').addEventListener('click', function(){
       api.deleteMeal(meal.id).then(function(){ toast('Meal deleted.'); card.remove(); loadStreak(); loadTrends(state.rangeDays); });
     });
+    body.querySelector('.mc-save-meal').addEventListener('click', function(){
+      var name = window.prompt('Name this meal (e.g. "My usual breakfast"):', meal.label);
+      if(!name) return;
+      var items = meal.items.map(function(it){ return {name: it.name, grams: it.grams, nutrients_per_100g: it.nutrients_per_100g}; });
+      api.createSavedMeal(name.trim(), items).then(function(){
+        toast('Saved as "' + name.trim() + '".');
+        loadSavedMeals();
+      });
+    });
   }
 
   function onMealUpdated(card, updatedMeal){
@@ -961,7 +1034,9 @@
   // ---------------- charts ----------------
 
   var KC_W=720, KC_H=220, KC_PAD_L=44, KC_PAD_R=10, KC_PAD_T=14, KC_PAD_B=26;
-  function drawKcalChart(series, goal){
+  function drawKcalChart(series, goal, color, unit){
+    color = color || 'var(--amber)';
+    unit = unit || '';
     var svg = document.getElementById('kcalChart');
     var vals = series.map(function(d){return d.v;}).concat([goal || 0]);
     var max = Math.max.apply(null, vals.concat([1])) * 1.08;
@@ -972,7 +1047,6 @@
     var pts = series.map(function(d,i){ return [X(i), Y(d.v)]; });
     var linePath = pts.map(function(p,i){ return (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
     var areaPath = linePath + ' L'+pts[pts.length-1][0].toFixed(1)+','+(KC_PAD_T+innerH)+' L'+pts[0][0].toFixed(1)+','+(KC_PAD_T+innerH)+' Z';
-    var goalY = Y(goal || 0);
     var gridLines = '';
     for(var s=0;s<=4;s++){
       var gy = KC_PAD_T + (innerH/4)*s;
@@ -986,12 +1060,13 @@
       return '<text x="'+X(i)+'" y="'+(KC_H-6)+'" text-anchor="middle" font-size="9.5" fill="var(--ink-faint)" font-family="IBM Plex Mono, monospace">'+short+'</text>';
     }).join('');
     var dots = pts.map(function(p,i){
-      return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="var(--paper-raised)" stroke="var(--amber)" stroke-width="2"/>';
+      return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="var(--paper-raised)" stroke="'+color+'" stroke-width="2"/>';
     }).join('');
-    svg.innerHTML = gridLines +
-      '<line x1="'+KC_PAD_L+'" y1="'+goalY+'" x2="'+(KC_W-KC_PAD_R)+'" y2="'+goalY+'" stroke="var(--line-strong)" stroke-width="1.5" stroke-dasharray="4 4"/>' +
-      '<path d="'+areaPath+'" fill="var(--amber)" opacity="0.12" stroke="none"/>' +
-      '<path d="'+linePath+'" fill="none" stroke="var(--amber)" stroke-width="2"/>' + dots + xLabels +
+    var goalLine = goal ?
+      '<line x1="'+KC_PAD_L+'" y1="'+Y(goal)+'" x2="'+(KC_W-KC_PAD_R)+'" y2="'+Y(goal)+'" stroke="var(--line-strong)" stroke-width="1.5" stroke-dasharray="4 4"/>' : '';
+    svg.innerHTML = gridLines + goalLine +
+      '<path d="'+areaPath+'" fill="'+color+'" opacity="0.12" stroke="none"/>' +
+      '<path d="'+linePath+'" fill="none" stroke="'+color+'" stroke-width="2"/>' + dots + xLabels +
       '<rect id="kcalHitLayer" x="'+KC_PAD_L+'" y="0" width="'+innerW+'" height="'+KC_H+'" fill="transparent"/>';
     svg.setAttribute('viewBox','0 0 '+KC_W+' '+KC_H);
     var hit = document.getElementById('kcalHitLayer');
@@ -1003,7 +1078,7 @@
       var i = Math.max(0, Math.min(series.length-1, Math.round((mx-KC_PAD_L)/innerW*(series.length-1))));
       var p = pts[i]; var wrapRect = wrap.getBoundingClientRect(); var scale = wrapRect.width/KC_W;
       tip.style.left = (p[0]*scale)+'px'; tip.style.top = (p[1]*scale-54)+'px';
-      tip.innerHTML = '<div class="t-title">'+series[i].d+'</div>'+Math.round(series[i].v).toLocaleString('en-US')+' kcal';
+      tip.innerHTML = '<div class="t-title">'+series[i].d+'</div>'+Math.round(series[i].v).toLocaleString('en-US')+unit;
       tip.classList.add('show');
     });
     hit.addEventListener('mouseleave', function(){ tip.classList.remove('show'); });
@@ -1070,13 +1145,33 @@
 
   function loadTrends(days){
     api.trends(days).then(function(data){
-      var kcalSeries = data.series.map(function(d){ return {d:d.date, v:d.totals.kcal||0}; });
+      var key = state.trendKey || 'kcal';
+      var metricSeries = data.series.map(function(d){ return {d:d.date, v:d.totals[key]||0}; });
       var macroSeries = data.series.map(function(d){ return {d:d.date, p:d.totals.protein||0, c:d.totals.carbs||0, f:d.totals.fat||0}; });
-      var goal = state.lastDaySummary ? (state.lastDaySummary.nutrients.find(function(n){return n.key==='kcal';})||{}).target : 2000;
-      drawKcalChart(kcalSeries, goal);
+      var nutrientDef = state.lastDaySummary ? state.lastDaySummary.nutrients.find(function(n){return n.key===key;}) : null;
+      var goal = nutrientDef ? nutrientDef.target : (key === 'kcal' ? 2000 : 0);
+      var unit = nutrientDef ? (nutrientDef.unit ? ' ' + nutrientDef.unit : '') : (key === 'kcal' ? ' kcal' : '');
+      var color = MACRO_COLOR[key] || 'var(--amber)';
+      drawKcalChart(metricSeries, goal, color, unit);
+      document.getElementById('trendIntakeSw').style.background = color;
+      document.getElementById('trendTitle').textContent = (nutrientDef ? nutrientDef.label : 'Calorie') + ' trend';
       drawMacroChart(macroSeries);
     });
   }
+
+  function loadTrendMetricOptions(){
+    var sel = document.getElementById('trendMetric');
+    api.nutrientDefs().then(function(defs){
+      var enabled = defs.filter(function(d){ return d.enabled; });
+      sel.innerHTML = enabled.map(function(d){
+        return '<option value="'+d.key+'"'+(d.key===state.trendKey?' selected':'')+'>'+d.label+'</option>';
+      }).join('');
+    });
+  }
+  document.getElementById('trendMetric').addEventListener('change', function(e){
+    state.trendKey = e.target.value;
+    loadTrends(state.rangeDays);
+  });
 
   function loadStreak(){
     api.trends(60).then(function(data){
@@ -1103,11 +1198,24 @@
   });
 
   // ---------------- quick add ----------------
+  //
+  // extract -> resolve are two real network round trips, not a simulated
+  // progress bar -- the ingredient list you see really is done extracting
+  // before the macros call even starts, so "Calculating macros..." means
+  // that request is genuinely in flight. Double-check (sanity) and the
+  // follow-up correction (refine) are separate on-demand calls, each
+  // costing one more Gemini request, so neither fires automatically.
 
   var quickInput = document.getElementById('quickInput');
   var parsedBox = document.getElementById('parsedBox');
   var parsedItems = document.getElementById('parsedItems');
+  var parseStatus = document.getElementById('parseStatus');
+  var sanityBox = document.getElementById('sanityBox');
+  var refineRow = document.getElementById('refineRow');
+  var refineInput = document.getElementById('refineInput');
+  var refineLog = document.getElementById('refineLog');
   var lastDraft = null;
+  var lastSanity = null;
 
   document.getElementById('parseBtn').addEventListener('click', doParse);
   quickInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doParse(); });
@@ -1116,33 +1224,84 @@
     return (typeof v === 'number' && isFinite(v)) ? v : 0;
   }
 
-  function renderDraft(draft, emptyMessage){
+  function setStatus(text){ parseStatus.textContent = text; }
+
+  function resetParseExtras(){
+    sanityBox.classList.remove('show', 'ok', 'issue');
+    sanityBox.innerHTML = '';
+    refineLog.innerHTML = '';
+    lastSanity = null;
+  }
+
+  function itemRow(it, opts){
+    opts = opts || {};
+    var pending = opts.pending;
+    var flash = opts.flash;
+    var n = it.nutrients || {};
+    var tag = CONFIDENCE_TAG[it.confidence] || '~';
+    var macros = pending
+      ? '<span class="pmacros num pi-pending">calculating…</span>'
+      : '<span class="pmacros num">'+Math.round(safeNum(n.kcal))+' kcal · '+Math.round(safeNum(n.protein))+'p '+
+        Math.round(safeNum(n.carbs))+'c '+Math.round(safeNum(n.fat))+'f '+Math.round(safeNum(n.fiber))+'fb</span>';
+    return '<div class="parsed-item' + (flash ? ' pi-flash' : '') + '">' +
+      '<span class="pname">' + tag + ' ' + it.name + ' <span style="color:var(--ink-faint); font-weight:400;">(' + Math.round(it.grams) + 'g)</span>' +
+      (pending ? '' : warningBadge(it.nutrients_per_100g)) + '</span>' + macros + '</div>';
+  }
+
+  function renderIngredientsOnly(extraction){
+    var html = '';
+    if(extraction.meal_label){ html += '<div class="ph" style="margin-bottom:6px; text-transform:none; font-family:inherit; font-size:13px; color:var(--ink);">' + extraction.meal_label + '</div>'; }
+    html += extraction.items.map(function(it){
+      return itemRow({name: it.name, grams: it.grams, confidence: 'llm_estimated'}, {pending: true});
+    }).join('');
+    parsedItems.innerHTML = html;
+  }
+
+  function renderDraft(draft, emptyMessage, highlightNames){
     lastDraft = draft;
     if(draft.error || !draft.items || !draft.items.length){
       parsedItems.innerHTML = '<div class="miss">' + (draft.error || emptyMessage) + '</div>';
+      refineRow.style.display = 'none';
       return;
     }
+    var highlight = {};
+    (highlightNames || []).forEach(function(n){ highlight[n] = true; });
     var html = '';
     if(draft.meal_label){ html += '<div class="ph" style="margin-bottom:6px; text-transform:none; font-family:inherit; font-size:13px; color:var(--ink);">' + draft.meal_label + '</div>'; }
     html += draft.items.map(function(it){
-      var n = it.nutrients;
-      var tag = CONFIDENCE_TAG[it.confidence] || '~';
-      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + ' <span style="color:var(--ink-faint); font-weight:400;">(' + Math.round(it.grams) + 'g)</span>' + warningBadge(it.nutrients_per_100g) + '</span>' +
-        '<span class="pmacros num">'+Math.round(safeNum(n.kcal))+' kcal · '+Math.round(safeNum(n.protein))+'p '+
-        Math.round(safeNum(n.carbs))+'c '+Math.round(safeNum(n.fat))+'f '+Math.round(safeNum(n.fiber))+'fb</span></div>';
+      return itemRow(it, {flash: !!highlight[it.name]});
     }).join('');
     if(draft.notes){ html += '<div class="miss" style="margin-top:6px;">Note: ' + draft.notes + '</div>'; }
     parsedItems.innerHTML = html;
+    refineRow.style.display = 'flex';
+  }
+
+  function runStagedParse(extractFn, failMsg){
+    parsedBox.classList.add('show');
+    resetParseExtras();
+    refineRow.style.display = 'none';
+    setStatus('🔎 Identifying ingredients…');
+    parsedItems.innerHTML = '<div class="miss">Identifying ingredients…</div>';
+    extractFn().then(function(extraction){
+      if(extraction.error || !extraction.items || !extraction.items.length){
+        setStatus('Parsed');
+        renderDraft(extraction, extraction.error || failMsg, []);
+        return;
+      }
+      setStatus('🧮 Calculating macros…');
+      renderIngredientsOnly(extraction);
+      return api.resolve(extraction).then(function(draft){
+        setStatus('Parsed');
+        renderDraft(draft, failMsg, []);
+      });
+    });
   }
 
   function doParse(){
     var text = quickInput.value.trim();
     if(!text) return;
-    parsedBox.classList.add('show');
-    parsedItems.innerHTML = '<div class="miss">Parsing…</div>';
-    api.parse(text).then(function(res){
-      renderDraft(res, 'Couldn\'t parse that -- try rephrasing, or run <code>python -m scripts.check_setup</code> to check your API keys.');
-    });
+    runStagedParse(function(){ return api.extract(text); },
+      'Couldn\'t parse that -- try rephrasing, or run <code>python -m scripts.check_setup</code> to check your API keys.');
   }
 
   var photoInput = document.getElementById('photoInput');
@@ -1150,25 +1309,69 @@
   photoInput.addEventListener('change', function(){
     var file = photoInput.files[0];
     if(!file) return;
-    parsedBox.classList.add('show');
-    parsedItems.innerHTML = '<div class="miss">Looking at the photo…</div>';
-    api.parsePhoto(file, quickInput.value.trim()).then(function(res){
-      renderDraft(res, 'Couldn\'t identify food in that photo -- try a clearer shot, or check GEMINI_API_KEY with <code>python -m scripts.check_setup</code>.');
-    });
+    var caption = quickInput.value.trim();
+    runStagedParse(function(){ return api.extractPhoto(file, caption); },
+      'Couldn\'t identify food in that photo -- try a clearer shot, or check GEMINI_API_KEY with <code>python -m scripts.check_setup</code>.');
     photoInput.value = '';
   });
   document.getElementById('parsedCancel').addEventListener('click', function(){
-    parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null;
+    parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null; resetParseExtras();
   });
   document.getElementById('parsedAdd').addEventListener('click', function(){
     if(!lastDraft || !lastDraft.items || !lastDraft.items.length) return;
     var slot = document.getElementById('mealSlotPick').value;
     api.confirm(lastDraft, slot, state.date).then(function(){
-      toast('Logged.'); parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null;
+      toast('Logged.'); parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null; resetParseExtras();
       loadDay(state.date);
       loadStreak();
     });
   });
+
+  document.getElementById('sanityBtn').addEventListener('click', function(){
+    if(!lastDraft || !lastDraft.items || !lastDraft.items.length){ toast('Parse something first.'); return; }
+    var btn = document.getElementById('sanityBtn');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    sanityBox.className = 'sanity-box show';
+    sanityBox.innerHTML = 'Double-checking ingredients, weights, and macros…';
+    api.sanity(lastDraft).then(function(res){
+      btn.disabled = false; btn.textContent = '🔍 Double-check';
+      if(res.error){ sanityBox.innerHTML = res.error; return; }
+      lastSanity = res;
+      sanityBox.classList.add(res.ok ? 'ok' : 'issue');
+      var html = (res.ok ? '✓ ' : '⚠ ') + res.note;
+      (res.flags || []).forEach(function(f){
+        html += '<div class="sb-flag"><b>' + f.item_name + '</b> (' + f.field + '): ' + f.concern + '</div>';
+      });
+      sanityBox.innerHTML = html;
+    });
+  });
+
+  function doRefine(){
+    var msg = refineInput.value.trim();
+    if(!msg || !lastDraft) return;
+    var btn = document.getElementById('refineBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    var userLine = document.createElement('div');
+    userLine.className = 'refine-user';
+    userLine.textContent = msg;
+    refineLog.appendChild(userLine);
+    refineInput.value = '';
+    api.refine(lastDraft, msg, lastSanity).then(function(res){
+      btn.disabled = false; btn.textContent = 'Send';
+      var draft = res.draft || lastDraft;
+      var changed = res.changed || [];
+      renderDraft(draft, '', changed);
+      var note = document.createElement('div');
+      note.className = 'refine-note';
+      note.textContent = changed.length
+        ? (changed.join(', ') + ' updated.')
+        : 'Nothing needed changing.';
+      refineLog.appendChild(note);
+      refineLog.scrollTop = refineLog.scrollHeight;
+    });
+  }
+  document.getElementById('refineBtn').addEventListener('click', doRefine);
+  refineInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doRefine(); });
 
   // ---------------- weekly report ----------------
 
@@ -1326,6 +1529,7 @@
 
   // ---------------- boot ----------------
   loadDay(state.date);
+  loadTrendMetricOptions();
   loadTrends(state.rangeDays);
   loadStreak();
   loadSavedMeals();

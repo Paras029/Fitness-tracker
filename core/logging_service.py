@@ -29,11 +29,6 @@ import re
 
 from core import db, food_match, gemini, nutrition_apis
 
-NUTRIENT_KEYS = [
-    "kcal", "protein", "carbs", "fat", "fiber", "sugar",
-    "sodium", "potassium", "vitamin_c", "iron", "calcium", "vitamin_d",
-]
-
 _CORE_MACROS = ("kcal", "protein", "carbs", "fat")
 
 
@@ -42,10 +37,15 @@ def _norm_name(name):
 
 
 def _clean_numeric(d):
+    """Keeps any key with a finite numeric value -- deliberately NOT
+    filtered to a fixed nutrient list, so a custom nutrient added via
+    Settings (core/db.py's nutrient_defs table) flows through untouched
+    instead of being silently dropped here before it ever reaches
+    storage. db.sanitize_nutrients() does the same numeric validation
+    again at the write boundary; this earlier pass just keeps bad data
+    out of in-memory merging."""
     out = {}
     for k, v in (d or {}).items():
-        if k not in NUTRIENT_KEYS:
-            continue
         try:
             f = float(v)
         except (TypeError, ValueError):
@@ -57,6 +57,15 @@ def _clean_numeric(d):
 
 def _has_core_macros(d):
     return all(k in d for k in _CORE_MACROS)
+
+
+def _current_nutrient_keys():
+    """The nutrient fields Gemini should be asked to estimate right now --
+    every enabled nutrient_defs key (built-ins plus whatever the user has
+    added via Settings), not a hardcoded list. This is what makes a
+    newly-added custom nutrient actually get populated by the LLM fill
+    step instead of staying permanently empty."""
+    return [d["key"] for d in db.list_nutrient_defs(enabled_only=True)]
 
 
 # ==================== stage 2+3: resolve ingredients to nutrients ====================
@@ -166,7 +175,7 @@ def _batch_fill(need_fill):
     fill_result = gemini.fill_nutrition([
         {"name": l["name"], "api_data": l["api_data"], "api_source": l["source"]}
         for l in need_fill
-    ])
+    ], nutrient_keys=_current_nutrient_keys())
     if not fill_result:
         return {}
     return {_norm_name(fit.get("name", "")): fit for fit in fill_result.get("items", [])}
@@ -182,7 +191,7 @@ def _retry_missing_macros_once(resolved):
     fill_result = gemini.fill_nutrition([
         {"name": it["name"], "api_data": it["nutrients_per_100g"], "api_source": it["source"]}
         for it in stragglers
-    ])
+    ], nutrient_keys=_current_nutrient_keys())
     if not fill_result:
         return
     filled_by_name = {_norm_name(f.get("name", "")): f for f in fill_result.get("items", [])}
@@ -200,15 +209,20 @@ def _retry_missing_macros_once(resolved):
 
 
 # ==================== stage 1 + draft assembly ====================
+#
+# Split into two calls -- extract_only() then resolve_draft() -- so a
+# caller that wants to show progress in real time (which ingredients were
+# found, then macros filling in) can render between them instead of
+# waiting for one call that does both. build_meal_draft() is a thin
+# wrapper of the two for callers that just want the end result (the
+# Telegram bot's voice flow, tests, anything that doesn't drive a staged
+# UI).
 
-def build_meal_draft(text=None, image_bytes=None, mime_type=None, caption=None):
-    """Returns a draft dict:
-        {"items": [{name, grams, nutrients_per_100g, nutrients (absolute,
-                    for display), source, confidence}, ...],
-         "meal_label": str, "extraction_confidence": str, "notes": str|null,
-         "raw_input": str}
-    or {"items": [], "error": str} if extraction failed outright.
-    """
+def extract_only(text=None, image_bytes=None, mime_type=None, caption=None):
+    """Stage 1 only: WHAT was eaten and HOW MUCH, no nutrition yet.
+    Returns {"items": [{name, grams, grams_confidence, is_packaged,
+    barcode}, ...], "meal_label", "extraction_confidence", "notes",
+    "raw_input"} or {"items": [], "error": str} if extraction failed."""
     raw_input = text or caption or "[photo]"
     extraction = gemini.extract_ingredients(text=text, image_bytes=image_bytes,
                                              mime_type=mime_type, caption=caption)
@@ -218,6 +232,21 @@ def build_meal_draft(text=None, image_bytes=None, mime_type=None, caption=None):
                 "raw_input": raw_input,
                 "error": "Couldn't identify any food. Try rephrasing, or check "
                          "GEMINI_API_KEY with `python -m scripts.check_setup`."}
+    extraction["raw_input"] = raw_input
+    return extraction
+
+
+def resolve_draft(extraction):
+    """Stage 2: turns an extract_only() result into a full draft --
+    deterministic API lookups plus the batched nutrition-fill LLM call(s).
+    Returns the same draft shape build_meal_draft() used to return:
+        {"items": [{name, grams, nutrients_per_100g, nutrients (absolute,
+                    for display), source, confidence}, ...],
+         "meal_label": str, "extraction_confidence": str, "notes": str|null,
+         "raw_input": str}
+    Passing through an extraction that already errored is a no-op."""
+    if extraction.get("error") or not extraction.get("items"):
+        return extraction
 
     resolved = _resolve_ingredients(extraction["items"])
     for item in resolved:
@@ -228,8 +257,15 @@ def build_meal_draft(text=None, image_bytes=None, mime_type=None, caption=None):
         "meal_label": extraction.get("meal_label") or (resolved[0]["name"] if resolved else "Meal"),
         "extraction_confidence": extraction.get("extraction_confidence"),
         "notes": extraction.get("notes"),
-        "raw_input": raw_input,
+        "raw_input": extraction.get("raw_input"),
     }
+
+
+def build_meal_draft(text=None, image_bytes=None, mime_type=None, caption=None):
+    """Both stages back to back, for callers that don't need to show
+    progress between them."""
+    extraction = extract_only(text=text, image_bytes=image_bytes, mime_type=mime_type, caption=caption)
+    return resolve_draft(extraction)
 
 
 def build_meal_draft_from_voice(audio_bytes, mime_type="audio/ogg"):
@@ -240,6 +276,79 @@ def build_meal_draft_from_voice(audio_bytes, mime_type="audio/ogg"):
     if not transcript:
         return None, {"items": [], "error": "Couldn't make that out -- try again or send text instead."}
     return transcript, build_meal_draft(text=transcript)
+
+
+# ==================== on-demand: sanity check + conversational refine ====================
+#
+# Neither of these runs automatically -- each is one more Gemini call, and
+# with a daily quota this tight the user decides when it's worth spending
+# one, not the pipeline.
+
+def _draft_totals(items):
+    totals = {}
+    for it in items:
+        for k, v in (it.get("nutrients") or {}).items():
+            totals[k] = round(totals.get(k, 0) + db.safe_num(v), 2)
+    return totals
+
+
+def sanity_check(draft):
+    """On-demand consistency review of a resolved draft's ingredients,
+    weights, and macros -- catches things like a per-item macro that's
+    wildly off for that food/weight, before the user confirms it. Returns
+    {"ok": bool, "flags": [{"item_name", "field", "concern"}, ...], "note":
+    str} or None if the call failed."""
+    items = draft.get("items") or []
+    if not items:
+        return None
+    return gemini.sanity_check_meal(items, _draft_totals(items))
+
+
+def refine_meal(draft, user_message, sanity=None):
+    """Applies a user's free-text correction/concern to an already-resolved
+    draft -- one Gemini call, only fired when the user actually sends a
+    follow-up message, with the previous items/totals (and sanity result,
+    if any) passed as context so it understands what it's revising.
+
+    Returns (updated_draft, changed_names) -- changed_names lists exactly
+    which items were added, removed, or modified, so the caller can
+    highlight just those rather than re-rendering everything as if it were
+    new. On failure, returns (draft, []) unchanged."""
+    items = draft.get("items") or []
+    if not items or not user_message or not user_message.strip():
+        return draft, []
+
+    result = gemini.refine_draft(items, _draft_totals(items), user_message,
+                                  sanity=sanity, nutrient_keys=_current_nutrient_keys())
+    if not result or not result.get("items"):
+        return draft, []
+
+    by_name = {_norm_name(it["name"]): it for it in items}
+    new_items = []
+    changed = []
+    for upd in result["items"]:
+        name = upd.get("name") or "item"
+        key = _norm_name(name)
+        original = by_name.get(key)
+        grams = db.safe_num(upd.get("grams"), original["grams"] if original else 100)
+        nutrients = _clean_numeric(upd.get("nutrients_per_100g")) if upd.get("nutrients_per_100g") \
+            else (original["nutrients_per_100g"] if original else {})
+        is_new = original is None
+        is_different = is_new or original["grams"] != grams or original["nutrients_per_100g"] != nutrients \
+            or original["name"] != name
+        item = {
+            "name": name, "grams": grams, "nutrients_per_100g": nutrients,
+            "source": (original or {}).get("source") or "user",
+            "confidence": "user_corrected" if is_different else (original or {}).get("confidence", "estimated"),
+        }
+        item["nutrients"] = db.item_absolute_nutrients(item)
+        if is_different:
+            changed.append(name)
+        new_items.append(item)
+
+    new_draft = dict(draft)
+    new_draft["items"] = new_items
+    return new_draft, changed
 
 
 # ==================== confirm / persist ====================

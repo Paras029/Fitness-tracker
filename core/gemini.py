@@ -1,5 +1,5 @@
 """Gemini access via plain REST calls (no google-generativeai SDK -- see
-note below), providing three distinct, single-purpose calls used by the
+note below), providing distinct, single-purpose calls used by the
 meal-logging pipeline:
 
   1. extract_ingredients()  -- WHAT was eaten and HOW MUCH. Never touches
@@ -12,7 +12,19 @@ meal-logging pipeline:
      truth; this call only fills the gaps API left, or estimates from
      scratch when API found nothing.
 
-  3. rate_meal()            -- a single healthiness rating for a
+  3. sanity_check_meal()    -- ON-DEMAND review of a resolved draft's
+     ingredients/weights/macros for internal consistency (do the macros
+     roughly add up to the calories, is a value implausible for that
+     food). Never called automatically -- it costs one more request
+     against a tight daily quota, so it only fires when the user actually
+     asks for it.
+
+  4. refine_draft()         -- applies a user's free-text correction or
+     concern to an already-resolved draft (fix a value, change a weight,
+     add/remove an ingredient), given the previous items/totals as
+     context. Only fires when the user sends a follow-up message.
+
+  5. rate_meal()            -- a single healthiness rating for a
      finalized, confirmed meal.
 
 Splitting extraction from nutrition estimation (rather than one blended
@@ -52,6 +64,7 @@ NUTRIENT_KEYS = [
     "kcal", "protein", "carbs", "fat", "fiber", "sugar",
     "sodium", "potassium", "vitamin_c", "iron", "calcium", "vitamin_d",
 ]
+CORE_MACRO_KEYS = ("kcal", "protein", "carbs", "fat")
 
 
 def _call(parts, want_json=True, response_schema=None, max_output_tokens=None):
@@ -242,9 +255,9 @@ _NUTRITION_INSTRUCTIONS = (
     "drop an item, even if you are unsure of the values.\n"
     "2. kcal, protein, carbs, and fat are REQUIRED for every item -- always "
     "provide your best estimate for these four, even a rough one, rather than "
-    "omitting them. The other fields (fiber, sugar, sodium, potassium, "
-    "vitamin_c, iron, calcium, vitamin_d) should be included whenever you can "
-    "reasonably estimate them, but may be omitted if truly unknown.\n"
+    "omitting them. The other tracked fields ({extra_fields}) should be "
+    "included whenever you can reasonably estimate them, but may be omitted "
+    "if truly unknown.\n"
     "3. Treat any API-provided field as ground truth -- do not change it "
     "unless it is clearly, obviously wrong for this food (e.g. a unit error), "
     "and if you do override it, explain why in \"notes\".\n"
@@ -261,39 +274,50 @@ _NUTRITION_INSTRUCTIONS = (
     "Items:\n{items_json}"
 )
 
-_NUTRIENT_PROPS = {k: {"type": "NUMBER"} for k in NUTRIENT_KEYS}
-_FILL_RESPONSE_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "items": {
-            "type": "ARRAY",
+
+def _nutrient_props(keys):
+    return {k: {"type": "NUMBER"} for k in keys}
+
+
+def _fill_response_schema(keys):
+    return {
+        "type": "OBJECT",
+        "properties": {
             "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "name": {"type": "STRING"},
-                    "nutrients_per_100g": {
-                        "type": "OBJECT",
-                        "properties": _NUTRIENT_PROPS,
-                        # Constrains generation, not just the prompt text --
-                        # the model cannot emit an item missing these.
-                        "required": ["kcal", "protein", "carbs", "fat"],
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING"},
+                        "nutrients_per_100g": {
+                            "type": "OBJECT",
+                            "properties": _nutrient_props(keys),
+                            # Constrains generation, not just the prompt text --
+                            # the model cannot emit an item missing these.
+                            "required": list(CORE_MACRO_KEYS),
+                        },
+                        "confidence": {"type": "STRING", "enum": ["database", "llm_filled", "llm_estimated"]},
+                        "notes": {"type": "STRING", "nullable": True},
                     },
-                    "confidence": {"type": "STRING", "enum": ["database", "llm_filled", "llm_estimated"]},
-                    "notes": {"type": "STRING", "nullable": True},
+                    "required": ["name", "nutrients_per_100g", "confidence"],
                 },
-                "required": ["name", "nutrients_per_100g", "confidence"],
             },
         },
-    },
-    "required": ["items"],
-}
+        "required": ["items"],
+    }
 
 
-def fill_nutrition(items):
+def fill_nutrition(items, nutrient_keys=None):
     """items: [{"name", "grams", "api_data" (dict, per-100g, may be partial
     or empty), "api_source"}]. Returns {"items": [...]} in the shape above,
     or None if the call failed entirely (caller falls back to whatever
     partial API data it already has, tagged low-confidence).
+
+    nutrient_keys: which per-100g fields to ask Gemini for, beyond the
+    always-required core four -- pass the caller's *current* enabled
+    nutrient_defs keys (core/db.py) so a custom nutrient added via Settings
+    is actually requested from the model, not just displayed as perpetually
+    empty. Falls back to the built-in NUTRIENT_KEYS if not given.
 
     Called at most twice per meal regardless of ingredient count (an
     initial batch covering everything, and one batched retry for whatever
@@ -301,15 +325,163 @@ def fill_nutrition(items):
     to stay well inside tight daily quotas."""
     if not items:
         return {"items": []}
+    keys = nutrient_keys or NUTRIENT_KEYS
+    extra_fields = ", ".join(k for k in keys if k not in CORE_MACRO_KEYS) or "none"
     payload = [{"name": it["name"], "known_data_per_100g": it.get("api_data") or {},
                 "known_data_source": it.get("api_source")} for it in items]
     prompt = (_NUTRITION_INSTRUCTIONS
               .replace("{count}", str(len(items)))
+              .replace("{extra_fields}", extra_fields)
               .replace("{items_json}", json.dumps(payload)))
     # ~150 tokens/item is generous for a 12-field nutrient object; floor of
     # 400 covers the fixed overhead for a single-item call.
     max_tokens = min(max(400, 150 * len(items)), 8192)
-    result = _call([{"text": prompt}], response_schema=_FILL_RESPONSE_SCHEMA, max_output_tokens=max_tokens)
+    result = _call([{"text": prompt}], response_schema=_fill_response_schema(keys), max_output_tokens=max_tokens)
+    if not isinstance(result, dict) or "items" not in result:
+        return None
+    return result
+
+
+# ==================== STAGE 2.5 (on demand): sanity check ====================
+#
+# Never called automatically -- one more request against a tight daily
+# quota, so it only runs when the user explicitly asks ("Double-check
+# this"). Reviews a resolved draft's ingredients/weights/macros for
+# internal consistency rather than re-estimating anything.
+#
+# Input:  items [{"name", "grams", "nutrients_per_100g"}, ...], totals dict
+# Output: {"ok": bool, "flags": [{"item_name", "field", "concern"}, ...], "note": str}
+
+_SANITY_INSTRUCTIONS = (
+    "You are reviewing an already-logged meal's ingredient list, portion "
+    "weights, and computed macros for internal consistency and plausibility "
+    "-- a sanity check, not a re-estimate. Look for things that are clearly "
+    "wrong: a macro that's an order of magnitude off for that food and "
+    "weight, a weight that doesn't match the described portion, "
+    "protein/carbs/fat that don't roughly add up to the stated calories "
+    "(~4 kcal/g for protein and carbs, ~9 kcal/g for fat -- allow slack for "
+    "fiber, alcohol, and rounding), or a value that's implausible for the "
+    "named food (e.g. near-zero protein for a meat).\n\n"
+    "Items (name, grams, nutrients per 100g): {items_json}\n"
+    "Totals for the whole meal: {totals_json}\n\n"
+    "Respond with JSON only: {\"ok\": true if nothing looks wrong, false if "
+    "you found at least one real issue, \"flags\": [{\"item_name\": str, "
+    "\"field\": str, \"concern\": one short specific sentence}, ...] (empty "
+    "array if ok), \"note\": one short overall sentence -- reassuring if ok, "
+    "specific about the worst issue if not}"
+)
+
+_SANITY_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "ok": {"type": "BOOLEAN"},
+        "flags": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "item_name": {"type": "STRING"},
+                    "field": {"type": "STRING"},
+                    "concern": {"type": "STRING"},
+                },
+                "required": ["item_name", "field", "concern"],
+            },
+        },
+        "note": {"type": "STRING"},
+    },
+    "required": ["ok", "flags", "note"],
+}
+
+
+def sanity_check_meal(items, totals):
+    """items: resolved draft items (name, grams, nutrients_per_100g).
+    Returns the shape above, or None if the call failed."""
+    items_str = json.dumps([{"name": it["name"], "grams": it.get("grams"),
+                              "nutrients_per_100g": it.get("nutrients_per_100g")} for it in items])
+    prompt = _SANITY_INSTRUCTIONS.replace("{items_json}", items_str).replace("{totals_json}", json.dumps(totals))
+    result = _call([{"text": prompt}], response_schema=_SANITY_RESPONSE_SCHEMA, max_output_tokens=600)
+    if not isinstance(result, dict) or "ok" not in result:
+        return None
+    return result
+
+
+# ==================== on demand: conversational refine ====================
+#
+# Only fires when the user sends a follow-up correction/concern about an
+# already-resolved draft. Receives the previous items + totals (and the
+# sanity-check result, if one was run) as context, so it understands what
+# it's revising and why -- never a call per ingredient, one call per
+# correction round the user actually asks for.
+#
+# Input:  items, totals, user_message (str), sanity (dict|None)
+# Output: {"items": [the COMPLETE corrected item list], "changed": [names],
+#          "note": str}
+
+_REFINE_INSTRUCTIONS = (
+    "You previously resolved this meal log. The user now has a correction "
+    "or concern about it. Apply exactly what they're asking for -- fix a "
+    "wrong value, adjust a weight, add or remove an ingredient, whatever "
+    "they describe -- and leave everything else unchanged. If a sanity "
+    "check already flagged something and the user's message references it, "
+    "resolve it accordingly.\n\n"
+    "Current items (name, grams, nutrients per 100g): {items_json}\n"
+    "Current totals: {totals_json}\n"
+    "{sanity_block}"
+    "User's message: \"{message}\"\n\n"
+    "Respond with JSON only: {\"items\": the COMPLETE corrected item list "
+    "(same shape as the input items -- include every item that should "
+    "still be in the meal, not only the ones you changed), \"changed\": "
+    "names of items you added, removed, or modified, \"note\": one short "
+    "sentence confirming what you changed, in plain language for the user}"
+)
+
+
+def _refine_response_schema(keys):
+    return {
+        "type": "OBJECT",
+        "properties": {
+            "items": {
+                "type": "ARRAY",
+                "items": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "name": {"type": "STRING"},
+                        "grams": {"type": "NUMBER"},
+                        "nutrients_per_100g": {
+                            "type": "OBJECT",
+                            "properties": _nutrient_props(keys),
+                            "required": list(CORE_MACRO_KEYS),
+                        },
+                    },
+                    "required": ["name", "grams", "nutrients_per_100g"],
+                },
+            },
+            "changed": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "note": {"type": "STRING"},
+        },
+        "required": ["items", "note"],
+    }
+
+
+def refine_draft(items, totals, user_message, sanity=None, nutrient_keys=None):
+    """Returns {"items": [...], "changed": [names], "note": str} or None if
+    the call failed (caller should leave the draft untouched and tell the
+    user to try rephrasing)."""
+    if not user_message or not user_message.strip():
+        return None
+    keys = nutrient_keys or NUTRIENT_KEYS
+    items_str = json.dumps([{"name": it["name"], "grams": it.get("grams"),
+                              "nutrients_per_100g": it.get("nutrients_per_100g")} for it in items])
+    sanity_block = ""
+    if sanity and sanity.get("flags"):
+        sanity_block = "A sanity check already flagged: " + json.dumps(sanity["flags"]) + "\n"
+    prompt = (_REFINE_INSTRUCTIONS
+              .replace("{items_json}", items_str)
+              .replace("{totals_json}", json.dumps(totals))
+              .replace("{sanity_block}", sanity_block)
+              .replace("{message}", user_message.strip()))
+    max_tokens = min(max(500, 150 * len(items) + 200), 8192)
+    result = _call([{"text": prompt}], response_schema=_refine_response_schema(keys), max_output_tokens=max_tokens)
     if not isinstance(result, dict) or "items" not in result:
         return None
     return result

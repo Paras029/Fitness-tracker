@@ -26,6 +26,16 @@ bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
 # Fine for a single-user bot process; lost on restart, which is harmless.
 _last_logged = {}
 
+# In-memory only, keyed by the pending_confirms token (which IS persisted
+# in the DB -- see db.create_pending_confirm). This just tracks which
+# message is showing that draft right now (for editing in place) and
+# whatever the last Double-check result was (so a follow-up refine can
+# pass it along as context). Losing this on a bot restart just means
+# Double-check/reply-to-correct stop working for that one in-flight
+# draft -- confirming it still works fine straight from the DB.
+_draft_meta = {}          # token -> {"chat_id", "message_id", "sanity"}
+_message_token = {}       # (chat_id, message_id) -> token, for reply-based refine
+
 MEAL_EMOJI = {"breakfast": "\U0001F305", "lunch": "\U0001F372", "dinner": "\U0001F307", "snack": "\U0001F34E"}
 CONFIDENCE_TAG = {"database": "✓", "cache": "✓", "llm_filled": "~", "llm_estimated": "~", "estimated": "~", "user_corrected": "✎"}
 CORE_MACROS = ("kcal", "protein", "carbs", "fat")
@@ -79,8 +89,47 @@ def meal_keyboard(token):
         types.InlineKeyboardButton(f"{MEAL_EMOJI[m]} {m.title()}", callback_data=f"log:{token}:{m}")
         for m in ("breakfast", "lunch", "dinner", "snack")
     ])
-    kb.add(types.InlineKeyboardButton("❌ Discard", callback_data=f"discard:{token}"))
+    kb.add(types.InlineKeyboardButton("\U0001F50D Double-check", callback_data=f"sanity:{token}"),
+           types.InlineKeyboardButton("❌ Discard", callback_data=f"discard:{token}"))
     return kb
+
+
+def safe_edit(text, chat_id, message_id, reply_markup=None):
+    """Telegram errors on an edit whose text+markup are byte-identical to
+    what's already there ("message is not modified") -- harmless, just
+    means this stage produced the same content as the last one."""
+    try:
+        bot.edit_message_text(text, chat_id, message_id, reply_markup=reply_markup)
+    except Exception as e:
+        if "message is not modified" not in str(e).lower():
+            raise
+
+
+def draft_message_text(draft, prefix="", sanity=None):
+    text = (prefix + "\n" if prefix else "")
+    if draft.get("meal_label"):
+        text += f"*{draft['meal_label']}*\n\n"
+    text += fmt_items(draft["items"])
+    if draft.get("notes"):
+        text += f"\n\n_Note: {draft['notes']}_"
+    if sanity:
+        icon = "✅" if sanity.get("ok") else "⚠️"
+        text += f"\n\n{icon} _{sanity.get('note', '')}_"
+        for f in sanity.get("flags") or []:
+            text += f"\n   • *{f.get('item_name')}* ({f.get('field')}): {f.get('concern')}"
+    text += "\n\nLog this as, or reply to this message to fix something:"
+    return text
+
+
+def _register_draft(token, chat_id, message_id, sanity=None):
+    _draft_meta[token] = {"chat_id": chat_id, "message_id": message_id, "sanity": sanity}
+    _message_token[(chat_id, message_id)] = token
+
+
+def _forget_draft(token):
+    meta = _draft_meta.pop(token, None)
+    if meta:
+        _message_token.pop((meta["chat_id"], meta["message_id"]), None)
 
 
 def offer_confirm(chat_id, draft, prefix=""):
@@ -88,14 +137,36 @@ def offer_confirm(chat_id, draft, prefix=""):
         bot.send_message(chat_id, draft.get("error") or "Couldn't identify any food in that.")
         return
     token = db.create_pending_confirm(chat_id, draft, meal_slot=guess_meal_slot())
-    text = (prefix + "\n" if prefix else "")
-    if draft.get("meal_label"):
-        text += f"*{draft['meal_label']}*\n\n"
-    text += fmt_items(draft["items"])
-    if draft.get("notes"):
-        text += f"\n\n_Note: {draft['notes']}_"
-    text += "\n\nLog this as:"
-    bot.send_message(chat_id, text, reply_markup=meal_keyboard(token))
+    msg = bot.send_message(chat_id, draft_message_text(draft, prefix=prefix), reply_markup=meal_keyboard(token))
+    _register_draft(token, chat_id, msg.message_id)
+
+
+def staged_build_and_offer(chat_id, extract_fn, prefix=""):
+    """Sends one message and edits it in place through each real pipeline
+    stage -- ingredients appear as soon as extraction finishes, then
+    macros once the fill call finishes -- rather than one long silence
+    followed by the finished result."""
+    msg = bot.send_message(chat_id, (prefix + "\n" if prefix else "") + "\U0001F50E Identifying ingredients…")
+    extraction = extract_fn()
+    if extraction.get("error") or not extraction.get("items"):
+        safe_edit(extraction.get("error") or "Couldn't identify any food in that.", chat_id, msg.message_id)
+        return
+
+    lines = (prefix + "\n" if prefix else "")
+    if extraction.get("meal_label"):
+        lines += f"*{extraction['meal_label']}*\n\n"
+    lines += "\n".join(f"• {it['name']} ({it.get('grams', 0):.0f}g)" for it in extraction["items"])
+    lines += "\n\n\U0001F9EE Calculating macros…"
+    safe_edit(lines, chat_id, msg.message_id)
+
+    draft = logging_service.resolve_draft(extraction)
+    if draft.get("error") or not draft.get("items"):
+        safe_edit(draft.get("error") or "Couldn't resolve nutrition for that.", chat_id, msg.message_id)
+        return
+
+    token = db.create_pending_confirm(chat_id, draft, meal_slot=guess_meal_slot())
+    safe_edit(draft_message_text(draft, prefix=prefix), chat_id, msg.message_id, reply_markup=meal_keyboard(token))
+    _register_draft(token, chat_id, msg.message_id)
 
 
 # ---------------- commands ----------------
@@ -110,6 +181,11 @@ def cmd_start(message):
         "know it, e.g. `250g`), a photo of a barcode/ingredient label, or a "
         "voice note describing the meal.\n\n"
         "Confidence tags: ✓ database-backed, ~ estimated, ✎ your correction.\n\n"
+        "Before confirming, you can tap 🔍 *Double-check* to have it review the "
+        "ingredients/weights/macros for anything that looks off, or just *reply* "
+        "to the draft message with a correction (\"actually the chicken was "
+        "150g\") -- either costs one extra request, so neither happens "
+        "automatically.\n\n"
         "Commands:\n"
         "/today -- today's totals\n"
         "/water <ml> -- log water (default 250ml)\n"
@@ -212,9 +288,11 @@ def gemini_report_or_fallback(context):
 def handle_text(message):
     if message.text.startswith("/"):
         return  # unknown command, ignore
+    if message.reply_to_message is not None:
+        handle_refine_reply(message)
+        return
     bot.send_chat_action(message.chat.id, "typing")
-    draft = logging_service.build_meal_draft(text=message.text)
-    offer_confirm(message.chat.id, draft)
+    staged_build_and_offer(message.chat.id, lambda: logging_service.extract_only(text=message.text))
 
 
 @bot.message_handler(content_types=["photo"])
@@ -223,20 +301,55 @@ def handle_photo(message):
     file_info = bot.get_file(message.photo[-1].file_id)
     image_bytes = bot.download_file(file_info.file_path)
     caption = message.caption or ""
-    draft = logging_service.build_meal_draft(image_bytes=image_bytes, mime_type="image/jpeg", caption=caption)
-    offer_confirm(message.chat.id, draft)
+    staged_build_and_offer(message.chat.id,
+        lambda: logging_service.extract_only(image_bytes=image_bytes, mime_type="image/jpeg", caption=caption))
 
 
 @bot.message_handler(content_types=["voice"])
 def handle_voice(message):
+    from core import gemini
     bot.send_chat_action(message.chat.id, "typing")
     file_info = bot.get_file(message.voice.file_id)
     audio_bytes = bot.download_file(file_info.file_path)
-    transcript, draft = logging_service.build_meal_draft_from_voice(audio_bytes, "audio/ogg")
+    transcript = gemini.transcribe_voice(audio_bytes, "audio/ogg")
     if not transcript:
-        bot.send_message(message.chat.id, draft.get("error", "Couldn't make that out -- try again or send text instead."))
+        bot.send_message(message.chat.id, "Couldn't make that out -- try again or send text instead.")
         return
-    offer_confirm(message.chat.id, draft, prefix=f"_Heard:_ “{transcript}”\n")
+    staged_build_and_offer(message.chat.id, lambda: logging_service.extract_only(text=transcript),
+                            prefix=f"_Heard:_ “{transcript}”\n")
+
+
+def handle_refine_reply(message):
+    """A text reply to one of our own pending-draft messages is treated as
+    a correction/concern, not a new meal -- one more Gemini call, only
+    fired because the user actually asked for a change. Sends a NEW
+    message with the result (rather than editing the old one) so it
+    visibly follows the user's correction in the chat, and clears the old
+    message's keyboard so there's only ever one "confirm" button in play."""
+    chat_id = message.chat.id
+    token = _message_token.get((chat_id, message.reply_to_message.message_id))
+    if not token:
+        return  # a reply to something else -- not ours to handle
+    pending = db.peek_pending_confirm(token)
+    if not pending:
+        bot.send_message(chat_id, "That confirmation expired -- log it again.")
+        _forget_draft(token)
+        return
+    draft = pending["items"]
+    meta = _draft_meta.get(token, {})
+    bot.send_chat_action(chat_id, "typing")
+    updated_draft, changed = logging_service.refine_meal(draft, message.text, sanity=meta.get("sanity"))
+    if not changed:
+        bot.send_message(chat_id, "Didn't find anything to change from that -- try being more specific.")
+        return
+    db.update_pending_confirm(token, updated_draft)
+    try:
+        bot.edit_message_reply_markup(chat_id, meta.get("message_id"), reply_markup=None)
+    except Exception:
+        pass
+    text = f"✎ Updated {', '.join(changed)}.\n\n" + draft_message_text(updated_draft, sanity=meta.get("sanity"))
+    new_msg = bot.send_message(chat_id, text, reply_markup=meal_keyboard(token))
+    _register_draft(token, chat_id, new_msg.message_id, sanity=meta.get("sanity"))
 
 
 # ---------------- callbacks ----------------
@@ -245,6 +358,7 @@ def handle_voice(message):
 def cb_log(call):
     _, token, slot = call.data.split(":", 2)
     pending = db.pop_pending_confirm(token)
+    _forget_draft(token)
     if not pending:
         bot.answer_callback_query(call.id, "This confirmation expired, please log it again.")
         return
@@ -262,8 +376,29 @@ def cb_log(call):
 def cb_discard(call):
     token = call.data.split(":", 1)[1]
     db.pop_pending_confirm(token)
+    _forget_draft(token)
     bot.answer_callback_query(call.id, "Discarded.")
     bot.edit_message_text("Discarded.", call.message.chat.id, call.message.message_id)
+
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("sanity:"))
+def cb_sanity(call):
+    token = call.data.split(":", 1)[1]
+    pending = db.peek_pending_confirm(token)
+    if not pending:
+        bot.answer_callback_query(call.id, "This confirmation expired, please log it again.")
+        return
+    bot.answer_callback_query(call.id, "Double-checking…")
+    draft = pending["items"]
+    sanity = logging_service.sanity_check(draft)
+    meta = _draft_meta.setdefault(token, {"chat_id": call.message.chat.id, "message_id": call.message.message_id})
+    meta["sanity"] = sanity
+    if sanity is None:
+        bot.send_message(call.message.chat.id, "Sanity check failed -- check GEMINI_API_KEY / quota with "
+                                                 "`python -m scripts.check_setup`.")
+        return
+    safe_edit(draft_message_text(draft, sanity=sanity), call.message.chat.id, call.message.message_id,
+              reply_markup=meal_keyboard(token))
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("quick:"))
@@ -279,8 +414,8 @@ def cb_quick(call):
              "meal_label": saved_meal["name"], "extraction_confidence": None, "raw_input": None}
     token = db.create_pending_confirm(call.message.chat.id, draft, meal_slot=guess_meal_slot())
     bot.answer_callback_query(call.id, "Pick a meal slot.")
-    bot.send_message(call.message.chat.id, f"*{saved_meal['name']}*\n\n{fmt_items(draft['items'])}\n\nLog this as:",
-                      reply_markup=meal_keyboard(token))
+    msg = bot.send_message(call.message.chat.id, draft_message_text(draft), reply_markup=meal_keyboard(token))
+    _register_draft(token, call.message.chat.id, msg.message_id)
 
 
 if __name__ == "__main__":

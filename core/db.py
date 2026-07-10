@@ -585,3 +585,25 @@ def pop_pending_confirm(token):
         d = dict(row)
         d["items"] = json.loads(d.pop("items_json"))
         return d
+
+
+def peek_pending_confirm(token):
+    """Same shape as pop_pending_confirm but doesn't delete -- for the
+    Double-check / reply-to-correct flow, which needs to read the pending
+    draft without ending the confirmation (the user still has to tap a
+    meal-slot button, or send another correction, afterward)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM pending_confirms WHERE token=?", (token,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["items"] = json.loads(d.pop("items_json"))
+        return d
+
+
+def update_pending_confirm(token, items):
+    """Overwrites a pending draft's contents in place -- used after a
+    conversational refine, so the eventual meal-slot tap confirms the
+    corrected draft, not the stale one the message was first sent with."""
+    with get_conn() as conn:
+        conn.execute("UPDATE pending_confirms SET items_json=? WHERE token=?", (json.dumps(items), token))
