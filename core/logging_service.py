@@ -62,8 +62,16 @@ def _has_core_macros(d):
 # ==================== stage 2+3: resolve ingredients to nutrients ====================
 
 def _lookup_one(name, barcode=None):
-    """Deterministic per-ingredient lookup: cache first, then whichever
-    API answers. Returns (nutrients_per_100g_clean, source, cache_row)."""
+    """Deterministic per-ingredient lookup: cache first, then whichever API
+    actually returns usable numbers. Returns (nutrients_per_100g_clean,
+    source, cache_row).
+
+    USDA is tried before CalorieNinjas -- CalorieNinjas' free tier now
+    gates core fields (calories etc.) behind a premium subscription and
+    returns a 200 with a message string instead of a number, which is
+    truthy but useless; checking for *any actual nutrient key* (not just
+    "the API responded") is what keeps that from silently blocking the
+    fallback to a source that still works."""
     cached = food_match.find_cached_match(name)
     if cached:
         import json
@@ -73,16 +81,19 @@ def _lookup_one(name, barcode=None):
 
     if barcode:
         off = nutrition_apis.lookup_openfoodfacts_barcode(barcode)
-        if off:
-            return _clean_numeric(off), "openfoodfacts", None
-
-    ninja = nutrition_apis.parse_calorieninjas(name)
-    if ninja:
-        return _clean_numeric(ninja), "calorieninjas", None
+        cleaned = _clean_numeric(off) if off else {}
+        if cleaned:
+            return cleaned, "openfoodfacts", None
 
     usda = nutrition_apis.parse_usda(name)
-    if usda:
-        return _clean_numeric(usda), "usda", None
+    cleaned = _clean_numeric(usda) if usda else {}
+    if cleaned:
+        return cleaned, "usda", None
+
+    ninja = nutrition_apis.parse_calorieninjas(name)
+    cleaned = _clean_numeric(ninja) if ninja else {}
+    if cleaned:
+        return cleaned, "calorieninjas", None
 
     return {}, None, None
 

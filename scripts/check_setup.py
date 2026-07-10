@@ -77,22 +77,36 @@ def check_calorieninjas():
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY}, timeout=10,
     )
     data = r.json() if r.ok else None
-    if r.ok and isinstance(data, list) and data:
-        print(f"[{PASS}] CalorieNinjas -- parsed 'apple' -> {data[0].get('calories')} kcal")
+    calories = data[0].get("calories") if (r.ok and isinstance(data, list) and data) else None
+    if isinstance(calories, (int, float)):
+        print(f"[{PASS}] CalorieNinjas -- parsed 'apple' -> {calories} kcal")
+    elif r.ok and isinstance(data, list) and data:
+        # A 200 with a non-numeric value (e.g. a premium-upsell string
+        # instead of a number) is not a pass -- the app's own _safe_float
+        # will discard it same as it would discard a real "NaN" sentinel,
+        # but that means this key isn't actually giving you nutrition data.
+        print(f"[{FAIL}] CalorieNinjas -- request succeeded but 'calories' wasn't a number: "
+              f"{calories!r} (likely a free-tier field restriction, not a bug -- the app already "
+              f"discards this and falls through to USDA/Gemini automatically)")
     else:
         print(f"[{FAIL}] CalorieNinjas -- {r.status_code}: {r.text[:200]}")
 
 
 def check_usda():
+    using_demo = config.USDA_API_KEY == "DEMO_KEY"
     r = requests.get(
         "https://api.nal.usda.gov/fdc/v1/foods/search",
         params={"query": "apple", "pageSize": 1, "api_key": config.USDA_API_KEY}, timeout=10,
     )
-    label = "USDA (DEMO_KEY)" if config.USDA_API_KEY == "DEMO_KEY" else "USDA"
+    label = "USDA (DEMO_KEY)" if using_demo else "USDA"
     if r.ok and r.json().get("foods"):
-        note = "" if config.USDA_API_KEY != "DEMO_KEY" else \
+        note = "" if not using_demo else \
             "  (shared demo key, ~30 req/hour -- get your own free key at https://fdc.nal.usda.gov/api-key-signup)"
         print(f"[{PASS}] {label:13s} -- reachable{note}")
+    elif using_demo and r.status_code == 429:
+        print(f"[{FAIL}] {label:13s} -- DEMO_KEY is rate-limited right now (shared across everyone using "
+              f"it, not per-user -- this isn't specific to you). Get your own free key (instant, no "
+              f"approval) at https://fdc.nal.usda.gov/api-key-signup and set USDA_API_KEY in .env.")
     else:
         print(f"[{FAIL}] {label:13s} -- {r.status_code}: {r.text[:200]}")
 
