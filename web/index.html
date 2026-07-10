@@ -1006,6 +1006,10 @@
   document.getElementById('parseBtn').addEventListener('click', doParse);
   quickInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doParse(); });
 
+  function safeNum(v){
+    return (typeof v === 'number' && isFinite(v)) ? v : 0;
+  }
+
   function renderParsedItems(items, emptyMessage){
     lastParsed = items || [];
     if(!lastParsed.length){
@@ -1016,7 +1020,8 @@
       var n = it.nutrients;
       var tag = {database:'✓', estimated:'~', user_corrected:'✎'}[it.confidence] || '';
       return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + '</span>' +
-        '<span class="pmacros num">'+Math.round(n.kcal||0)+' kcal · '+Math.round(n.protein||0)+'p '+Math.round(n.carbs||0)+'c '+Math.round(n.fat||0)+'f</span></div>';
+        '<span class="pmacros num">'+Math.round(safeNum(n.kcal))+' kcal · '+Math.round(safeNum(n.protein))+'p '+
+        Math.round(safeNum(n.carbs))+'c '+Math.round(safeNum(n.fat))+'f '+Math.round(safeNum(n.fiber))+'fb</span></div>';
     }).join('');
   }
 

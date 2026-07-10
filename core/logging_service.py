@@ -12,6 +12,8 @@ USDA is also used opportunistically to fill in missing fiber/micronutrient
 fields on a CalorieNinjas hit, since CalorieNinjas' schema is macro-focused.
 """
 
+import re
+
 from core import db, food_match, gemini, nutrition_apis
 
 NUTRIENT_KEYS = [
@@ -70,6 +72,40 @@ def _scale_per_100g(nutrients, grams):
     return {k: round(v * factor, 2) for k, v in nutrients.items() if isinstance(v, (int, float))}
 
 
+def _norm_name(name):
+    return re.sub(r"[^a-z0-9\s]", "", name.lower()).strip()
+
+
+def _dedupe_items(items):
+    """CalorieNinjas sometimes matches the same ingredient twice in one
+    phrase -- e.g. "grilled chicken bowl - 200g chicken with 200g rice"
+    matches "chicken" both generically (from "grilled chicken bowl") and
+    with its quantity (from "200g chicken"). When one item's name is
+    contained in another's, keep whichever has more populated nutrient
+    fields (the quantified match is usually the more complete one)."""
+    def completeness(it):
+        return sum(1 for v in it["nutrients"].values() if v)
+
+    kept = []
+    for it in items:
+        norm = _norm_name(it["name"])
+        dup_at = None
+        for i, existing in enumerate(kept):
+            existing_norm = _norm_name(existing["name"])
+            if norm and existing_norm and (norm in existing_norm or existing_norm in norm):
+                dup_at = i
+                break
+        if dup_at is None:
+            kept.append(it)
+            continue
+        existing = kept[dup_at]
+        if completeness(it) > completeness(existing):
+            kept[dup_at] = it
+        elif completeness(it) == completeness(existing) and len(it["name"]) > len(existing["name"]):
+            kept[dup_at] = it
+    return kept
+
+
 def parse_text_entry(text):
     """Returns a list of items: [{name, nutrients, source, confidence}]"""
     cached = food_match.find_cached_match(text)
@@ -81,9 +117,16 @@ def parse_text_entry(text):
         items = []
         for it in ninja_items:
             nutrients = {k: v for k, v in it.items() if k in NUTRIENT_KEYS and v is not None}
-            item = {"name": it["name"], "nutrients": nutrients, "source": "calorieninjas", "confidence": "database"}
+            # CalorieNinjas occasionally can't compute calories for a vague
+            # quantity (e.g. an unquantified item name) -- flag it instead
+            # of silently presenting a confident-looking but absent value.
+            # USDA isn't used to backfill this: its data is per-100g and we
+            # don't know what portion CalorieNinjas assumed, so blending
+            # the two here would risk a plausible-looking wrong number.
+            confidence = "database" if nutrients.get("kcal") is not None else "estimated"
+            item = {"name": it["name"], "nutrients": nutrients, "source": "calorieninjas", "confidence": confidence}
             items.append(_enrich_with_usda(item))
-        return items
+        return _dedupe_items(items)
 
     usda_hit = nutrition_apis.parse_usda(text)
     if usda_hit:

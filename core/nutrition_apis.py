@@ -18,6 +18,7 @@ silently returning nothing:
 """
 
 import logging
+import math
 import requests
 
 from core import config
@@ -62,6 +63,20 @@ def _post(url, **kwargs):
 # Free tier: 10,000 requests/month. Great at parsing a natural-language
 # description ("1 bowl of dal and 2 rotis") straight into itemized macros.
 
+def _safe_float(v):
+    """API-Ninjas sends the literal string "NaN" (not null) for a field it
+    couldn't confidently compute -- e.g. calories/protein on an
+    under-specified compound dish name, while still guessing carbs/fat from
+    defaults. float("NaN") parses "successfully" into a real NaN, which then
+    poisons any arithmetic downstream (renders as "NaN" in the UI). Treat
+    anything that isn't a finite number as genuinely missing."""
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_calorieninjas(text):
     """Returns a list of {name, kcal, protein, carbs, fat, fiber, sugar,
     sodium, potassium} dicts, one per food item CalorieNinjas detected."""
@@ -79,14 +94,14 @@ def parse_calorieninjas(text):
     for it in data:
         items.append({
             "name": it.get("name", text),
-            "kcal": it.get("calories"),
-            "protein": it.get("protein_g"),
-            "carbs": it.get("carbohydrates_total_g"),
-            "fat": it.get("fat_total_g"),
-            "fiber": it.get("fiber_g"),
-            "sugar": it.get("sugar_g"),
-            "sodium": it.get("sodium_mg"),
-            "potassium": it.get("potassium_mg"),
+            "kcal": _safe_float(it.get("calories")),
+            "protein": _safe_float(it.get("protein_g")),
+            "carbs": _safe_float(it.get("carbohydrates_total_g")),
+            "fat": _safe_float(it.get("fat_total_g")),
+            "fiber": _safe_float(it.get("fiber_g")),
+            "sugar": _safe_float(it.get("sugar_g")),
+            "sodium": _safe_float(it.get("sodium_mg")),
+            "potassium": _safe_float(it.get("potassium_mg")),
         })
     return items
 
