@@ -255,7 +255,8 @@ def cmd_quick(message):
 def cmd_report(message):
     bot.send_message(message.chat.id, "Crunching this week's numbers...")
     context = logging_service.build_week_context(db.today_str())
-    report = gemini_report_or_fallback(context)
+    previous_context = logging_service.previous_week_context(db.today_str())
+    report = gemini_report_or_fallback(context, previous_context)
     lines = [f"*Weekly report ({context['start_date']} - {context['end_date']})*\n"]
     lines.append(report["summary"])
     if report.get("suggestions"):
@@ -268,9 +269,9 @@ def cmd_report(message):
     bot.send_message(message.chat.id, "\n".join(lines))
 
 
-def gemini_report_or_fallback(context):
+def gemini_report_or_fallback(context, previous_context=None):
     from core import gemini
-    report = gemini.generate_weekly_report(context)
+    report = gemini.generate_weekly_report(context, previous_context=previous_context)
     if report:
         return report
     gaps = sorted(context["targets_vs_actual"], key=lambda g: g["pct_of_target"])
@@ -338,16 +339,24 @@ def handle_refine_reply(message):
     draft = pending["items"]
     meta = _draft_meta.get(token, {})
     bot.send_chat_action(chat_id, "typing")
-    updated_draft, changed = logging_service.refine_meal(draft, message.text, sanity=meta.get("sanity"))
+    updated_draft, changed, note = logging_service.refine_meal(draft, message.text, sanity=meta.get("sanity"))
+    if note is None:
+        # the call itself failed (quota/network) -- distinct from "reviewed
+        # it and nothing needed changing", which is a normal, useful answer.
+        bot.send_message(chat_id, "Couldn't process that -- check GEMINI_API_KEY / quota, or try rephrasing.")
+        return
     if not changed:
-        bot.send_message(chat_id, "Didn't find anything to change from that -- try being more specific.")
+        # a question/concern that Gemini looked at and found nothing wrong
+        # with -- the original draft (and its keyboard) is still accurate,
+        # so there's nothing to re-send other than the explanation.
+        bot.send_message(chat_id, f"_{note}_")
         return
     db.update_pending_confirm(token, updated_draft)
     try:
         bot.edit_message_reply_markup(chat_id, meta.get("message_id"), reply_markup=None)
     except Exception:
         pass
-    text = f"✎ Updated {', '.join(changed)}.\n\n" + draft_message_text(updated_draft, sanity=meta.get("sanity"))
+    text = f"✎ {note}\n\n" + draft_message_text(updated_draft, sanity=meta.get("sanity"))
     new_msg = bot.send_message(chat_id, text, reply_markup=meal_keyboard(token))
     _register_draft(token, chat_id, new_msg.message_id, sanity=meta.get("sanity"))
 

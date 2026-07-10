@@ -7,13 +7,15 @@ have running on other ports (defaults to 8001 here; set API_PORT in .env
 to change it).
 """
 
+import csv
+import io
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 
 from core import config, db, logging_service
 
@@ -58,6 +60,19 @@ def day_contribution(date, nutrient_key):
 def delete_meal(meal_id):
     logging_service.delete_meal(meal_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/meals/<int:meal_id>", methods=["PUT"])
+def edit_meal(meal_id):
+    body = request.get_json(force=True)
+    try:
+        db.update_meal(meal_id, meal_slot=body.get("meal_slot"), label=body.get("label"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    meal = db.get_meal(meal_id)
+    if meal is None:
+        return jsonify({"error": "meal not found"}), 404
+    return jsonify({"meal": meal})
 
 
 @app.route("/api/meals/<int:meal_id>/items", methods=["POST"])
@@ -109,6 +124,48 @@ def trends():
         series.append({"date": d, "totals": {k: round(v, 1) for k, v in totals.items()}})
 
     return jsonify({"start": start_dt.strftime("%Y-%m-%d"), "end": end, "series": series})
+
+
+# ---------------- export ----------------
+# One row per logged ingredient (not per meal) -- that's the finest grain
+# stored, and it's what lets an external tool (a spreadsheet, another
+# app) recompute any rollup itself instead of only getting pre-aggregated
+# daily totals.
+
+@app.route("/api/export")
+def export_data():
+    end = request.args.get("end") or db.today_str()
+    start = request.args.get("start") or (datetime.strptime(end, "%Y-%m-%d") - timedelta(days=89)).strftime("%Y-%m-%d")
+    fmt = request.args.get("format", "csv")
+    meals = db.get_range_meals(start, end)
+    nutrient_keys = [d["key"] for d in db.list_nutrient_defs()]
+
+    rows = []
+    for m in meals:
+        for it in m["items"]:
+            row = {
+                "date": m["log_date"], "meal_slot": m["meal_slot"], "meal_label": m["label"],
+                "item_name": it["name"], "grams": it["grams"],
+                "source": it.get("source"), "confidence": it.get("confidence"),
+                "meal_rating_score": m.get("rating_score"), "meal_rating_label": m.get("rating_label"),
+            }
+            for k in nutrient_keys:
+                row[k] = it["nutrients"].get(k)
+            rows.append(row)
+
+    if fmt == "json":
+        return jsonify({"start": start, "end": end, "rows": rows})
+
+    fieldnames = ["date", "meal_slot", "meal_label", "item_name", "grams", "source", "confidence",
+                  "meal_rating_score", "meal_rating_label"] + nutrient_keys
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        output.getvalue(), mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=nutrition-export-{start}_to_{end}.csv"},
+    )
 
 
 # ---------------- settings ----------------
@@ -245,8 +302,8 @@ def quickadd_refine():
         "extraction_confidence": body.get("extraction_confidence"),
         "raw_input": body.get("raw_input"),
     }
-    updated, changed = logging_service.refine_meal(draft, body.get("message", ""), sanity=body.get("sanity"))
-    return jsonify({"draft": updated, "changed": changed})
+    updated, changed, note = logging_service.refine_meal(draft, body.get("message", ""), sanity=body.get("sanity"))
+    return jsonify({"draft": updated, "changed": changed, "note": note})
 
 
 @app.route("/api/quickadd/confirm", methods=["POST"])
@@ -268,8 +325,9 @@ def report_weekly():
     from core import gemini
     end = request.args.get("end") or db.today_str()
     context = logging_service.build_week_context(end)
-    report = gemini.generate_weekly_report(context) or {}
-    return jsonify({"context": context, "report": report})
+    previous_context = logging_service.previous_week_context(end)
+    report = gemini.generate_weekly_report(context, previous_context=previous_context) or {}
+    return jsonify({"context": context, "previous_context": previous_context, "report": report})
 
 
 @app.route("/api/ask", methods=["POST"])

@@ -1,0 +1,103 @@
+"""Plain REST access to the Gemini API -- no google-generativeai SDK.
+
+The official SDK pulls in grpcio, which has no prebuilt wheel for
+Termux's architecture and takes a very long time (and often fails) to
+compile from source on tablet hardware. Talking to the REST API directly
+with `requests` sidesteps that entirely.
+
+Every other module in this package (extraction.py, fill.py, review.py,
+rating.py) calls through `_call()` here -- it's the one place that knows
+about HTTP, auth, response-shape parsing, and the responseSchema/
+maxOutputTokens plumbing. Nothing else should touch `requests` directly.
+
+If GEMINI_MODEL starts returning 404s, the model name has likely been
+retired -- check https://ai.google.dev/gemini-api/docs/models for the
+current free-tier model and update GEMINI_MODEL in .env, or run
+`python -m scripts.check_setup` which cross-checks it automatically.
+"""
+
+import json
+import logging
+import os
+import re
+
+import requests
+
+from core import config
+
+TIMEOUT = 30
+_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+log = logging.getLogger("gemini")
+DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
+
+
+def call(parts, want_json=True, response_schema=None, max_output_tokens=None):
+    if not config.GEMINI_API_KEY:
+        log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
+        return None
+    url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
+    body = {"contents": [{"parts": parts}]}
+    if want_json:
+        gen_config = {"responseMimeType": "application/json"}
+        if response_schema:
+            # A schema *constrains* generation -- required fields genuinely
+            # cannot be omitted, which is a much stronger guarantee than
+            # asking nicely in the prompt text and hoping it's followed.
+            gen_config["responseSchema"] = response_schema
+        if max_output_tokens:
+            gen_config["maxOutputTokens"] = max_output_tokens
+        body["generationConfig"] = gen_config
+    if DEBUG:
+        log.warning("Gemini request body: %s", json.dumps(body)[:2000])
+
+    try:
+        resp = requests.post(
+            url, params={"key": config.GEMINI_API_KEY}, json=body, timeout=TIMEOUT
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        detail = e.response.text if getattr(e, "response", None) is not None else str(e)
+        log.warning("Gemini call to model '%s' failed: %s", config.GEMINI_MODEL, detail if DEBUG else detail[:300])
+        return None
+
+    if DEBUG:
+        log.warning("Gemini raw response: %s", json.dumps(data)[:4000])
+
+    candidates = data.get("candidates") or []
+    finish_reason = candidates[0].get("finishReason") if candidates else data.get("promptFeedback", {}).get("blockReason")
+    if finish_reason and finish_reason not in ("STOP", None):
+        # Common ones: MAX_TOKENS (response got cut off -- bump maxOutputTokens
+        # or shorten the prompt), SAFETY / PROHIBITED_CONTENT (a food photo or
+        # description tripped a safety filter), RECITATION.
+        log.warning("Gemini finished with reason '%s' instead of a normal stop -- "
+                    "this usually means the response was blocked or truncated, not a bug in the request.",
+                    finish_reason)
+
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError, TypeError):
+        log.warning("Gemini response had no usable candidate (finishReason=%s): %s",
+                    finish_reason, json.dumps(data)[:300])
+        return None
+
+    if not want_json:
+        return text
+    result = extract_json(text)
+    if result is None:
+        log.warning("Gemini response wasn't valid JSON: %s", text[:300])
+    return result
+
+
+def extract_json(text):
+    cleaned = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = re.search(r"(\[.*\]|\{.*\})", cleaned, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                return None
+    return None

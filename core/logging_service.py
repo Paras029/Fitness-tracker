@@ -305,23 +305,30 @@ def sanity_check(draft):
 
 
 def refine_meal(draft, user_message, sanity=None):
-    """Applies a user's free-text correction/concern to an already-resolved
-    draft -- one Gemini call, only fired when the user actually sends a
-    follow-up message, with the previous items/totals (and sanity result,
-    if any) passed as context so it understands what it's revising.
+    """Applies a user's free-text message to an already-resolved draft --
+    one Gemini call, only fired when the user actually sends a follow-up,
+    with the previous items/totals (and sanity result, if any) passed as
+    context. The message doesn't have to be a hard override: it might be
+    an explicit correction ("it was 150g", applied exactly) or a question/
+    concern ("does this look right?"), which gemini.refine_draft treats
+    with the same judgment as a sanity check -- only changing something it
+    genuinely believes is wrong, rather than blindly editing on request.
 
-    Returns (updated_draft, changed_names) -- changed_names lists exactly
-    which items were added, removed, or modified, so the caller can
-    highlight just those rather than re-rendering everything as if it were
-    new. On failure, returns (draft, []) unchanged."""
+    Returns (updated_draft, changed_names, note) -- changed_names lists
+    exactly which items were added, removed, or modified (empty if the
+    review concluded nothing needed changing), so the caller can highlight
+    just those instead of re-rendering everything as if it were new. note
+    is the model's own explanation, meant to be shown verbatim -- "looks
+    fine as-is" is a normal, informative answer here, not a failure. On
+    failure, returns (draft, [], None) unchanged."""
     items = draft.get("items") or []
     if not items or not user_message or not user_message.strip():
-        return draft, []
+        return draft, [], None
 
     result = gemini.refine_draft(items, _draft_totals(items), user_message,
                                   sanity=sanity, nutrient_keys=_current_nutrient_keys())
     if not result or not result.get("items"):
-        return draft, []
+        return draft, [], None
 
     by_name = {_norm_name(it["name"]): it for it in items}
     new_items = []
@@ -348,7 +355,7 @@ def refine_meal(draft, user_message, sanity=None):
 
     new_draft = dict(draft)
     new_draft["items"] = new_items
-    return new_draft, changed
+    return new_draft, changed, result.get("note")
 
 
 # ==================== confirm / persist ====================
@@ -490,3 +497,14 @@ def build_week_context(end_date, days=7):
     return {"start_date": start.strftime("%Y-%m-%d"), "end_date": end_date,
             "daily": daily, "averages": avg, "targets_vs_actual": gaps,
             "avg_meal_rating": round(sum(ratings) / len(ratings), 1) if ratings else None}
+
+
+def previous_week_context(end_date, days=7):
+    """Same shape as build_week_context(), but for the week immediately
+    before it -- pass this as generate_weekly_report()'s previous_context
+    so the report can cite real week-on-week deltas instead of describing
+    the current week in isolation."""
+    from datetime import datetime, timedelta
+    end = datetime.strptime(end_date, "%Y-%m-%d")
+    prev_end = end - timedelta(days=days)
+    return build_week_context(prev_end.strftime("%Y-%m-%d"), days=days)

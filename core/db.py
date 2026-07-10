@@ -532,6 +532,28 @@ def delete_meal(meal_id):
         conn.execute("DELETE FROM meals WHERE id=?", (meal_id,))  # cascades to meal_items
 
 
+VALID_MEAL_SLOTS = ("breakfast", "lunch", "dinner", "snack", "water")
+
+
+def update_meal(meal_id, meal_slot=None, label=None):
+    """Recategorize an already-logged meal (e.g. it landed in "snack" but
+    was really "lunch") or rename it -- doesn't touch items/nutrients at
+    all, just the meal's own row."""
+    sets, params = [], []
+    if meal_slot is not None:
+        if meal_slot not in VALID_MEAL_SLOTS:
+            raise ValueError(f"meal_slot must be one of {VALID_MEAL_SLOTS}")
+        sets.append("meal_slot=?")
+        params.append(meal_slot)
+    if label is not None:
+        sets.append("label=?")
+        params.append(label)
+    if not sets:
+        return
+    with get_conn() as conn:
+        conn.execute(f"UPDATE meals SET {', '.join(sets)} WHERE id=?", (*params, meal_id))
+
+
 def set_meal_rating(meal_id, score, label, note):
     with get_conn() as conn:
         conn.execute(

@@ -313,7 +313,11 @@
   .mc-add-row{ display:flex; gap:6px; margin-top:10px; }
   .mc-add-row input{ flex:1; border:1px solid var(--line-strong); border-radius:6px; padding:6px 9px; font-size:12.5px; background:var(--paper-sunk); color:var(--ink); font-family:'Instrument Sans'; }
   .mc-add-row button{ font-size:11.5px; padding:6px 10px; border-radius:6px; border:1px solid var(--line-strong); background:transparent; color:var(--ink-muted); cursor:pointer; }
-  .mc-footer{ display:flex; justify-content:flex-end; gap:4px; margin-top:10px; }
+  .mc-footer{ display:flex; justify-content:space-between; align-items:center; gap:4px; margin-top:10px; }
+  .mc-slot-pick{
+    font-size:11px; border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px;
+    background:var(--paper-raised); color:var(--ink-muted); font-family:'Instrument Sans';
+  }
   .mc-delete-meal{ font-size:11px; color:var(--critical); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
   .mc-save-meal{ font-size:11px; color:var(--ink-muted); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
   .mc-save-meal:hover{ color:var(--ink); }
@@ -580,7 +584,10 @@
         </div>
 
         <div class="card ledger-card">
-          <h3 class="section-label">Log</h3>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 class="section-label">Log</h3>
+            <a id="exportLink" class="btn btn-ghost" style="padding:5px 10px; font-size:11.5px;" download>Export CSV</a>
+          </div>
           <div id="ledger"></div>
         </div>
 
@@ -696,6 +703,7 @@
     contribution: function(date, key){ return fetch('/api/day/' + date + '/contribution/' + key).then(r=>r.json()); },
     trends: function(days){ return fetch('/api/trends?days=' + days).then(r=>r.json()); },
     deleteMeal: function(mealId){ return fetch('/api/meals/' + mealId, {method:'DELETE'}).then(r=>r.json()); },
+    editMeal: function(mealId, body){ return fetch('/api/meals/' + mealId, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     addMealItem: function(mealId, body){ return fetch('/api/meals/' + mealId + '/items', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     editMealItem: function(itemId, body){ return fetch('/api/meals/items/' + itemId, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     deleteMealItem: function(itemId){ return fetch('/api/meals/items/' + itemId, {method:'DELETE'}).then(r=>r.json()); },
@@ -953,7 +961,14 @@
         '<input type="text" class="mc-add-input" placeholder="Add an ingredient…">' +
         '<button class="mc-add-btn">Add</button>' +
       '</div>' +
-      '<div class="mc-footer"><button class="mc-save-meal">Save as meal</button><button class="mc-delete-meal">Delete whole meal</button></div>';
+      '<div class="mc-footer">' +
+        '<select class="mc-slot-pick">' +
+          ['breakfast', 'lunch', 'dinner', 'snack'].map(function(s){
+            return '<option value="' + s + '"' + (s === meal.meal_slot ? ' selected' : '') + '>' + MEAL_LABEL[s] + '</option>';
+          }).join('') +
+        '</select>' +
+        '<span><button class="mc-save-meal">Save as meal</button><button class="mc-delete-meal">Delete whole meal</button></span>' +
+      '</div>';
     body.innerHTML = html;
 
     body.querySelectorAll('.mc-item-grams').forEach(function(input){
@@ -1003,6 +1018,17 @@
       api.createSavedMeal(name.trim(), items).then(function(){
         toast('Saved as "' + name.trim() + '".');
         loadSavedMeals();
+      });
+    });
+    body.querySelector('.mc-slot-pick').addEventListener('change', function(e){
+      var newSlot = e.target.value;
+      if(newSlot === meal.meal_slot) return;
+      api.editMeal(meal.id, {meal_slot: newSlot}).then(function(){
+        toast('Moved to ' + MEAL_LABEL[newSlot] + '.');
+        // the card needs to move to a different slot-group section, which
+        // is grouping computed at render time -- simplest correct way to
+        // reflect that is a full day reload rather than DOM surgery.
+        loadDay(state.date);
       });
     });
   }
@@ -1358,14 +1384,22 @@
     refineInput.value = '';
     api.refine(lastDraft, msg, lastSanity).then(function(res){
       btn.disabled = false; btn.textContent = 'Send';
+      var note = document.createElement('div');
+      if(res.note == null){
+        // the call itself failed -- distinct from "reviewed it and found
+        // nothing wrong", which is a normal, useful answer worth showing
+        // verbatim rather than papering over with a generic message.
+        note.className = 'refine-note';
+        note.textContent = 'Couldn\'t process that -- check GEMINI_API_KEY / quota, or try rephrasing.';
+        refineLog.appendChild(note);
+        refineLog.scrollTop = refineLog.scrollHeight;
+        return;
+      }
       var draft = res.draft || lastDraft;
       var changed = res.changed || [];
       renderDraft(draft, '', changed);
-      var note = document.createElement('div');
       note.className = 'refine-note';
-      note.textContent = changed.length
-        ? (changed.join(', ') + ' updated.')
-        : 'Nothing needed changing.';
+      note.textContent = res.note;
       refineLog.appendChild(note);
       refineLog.scrollTop = refineLog.scrollHeight;
     });
@@ -1528,6 +1562,7 @@
   });
 
   // ---------------- boot ----------------
+  document.getElementById('exportLink').href = '/api/export?format=csv';
   loadDay(state.date);
   loadTrendMetricOptions();
   loadTrends(state.rangeDays);
