@@ -68,7 +68,7 @@ def parse_calorieninjas(text):
     if not config.CALORIENINJAS_API_KEY:
         return []
     data = _get(
-        "https://api.calorieninjas.com/v1/nutrition",
+        "https://api.api-ninjas.com/v1/nutrition",
         params={"query": text},
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY},
     )

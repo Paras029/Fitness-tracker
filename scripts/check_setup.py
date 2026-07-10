@@ -59,7 +59,7 @@ def check_calorieninjas():
         print(f"[{SKIP}] CalorieNinjas -- CALORIENINJAS_API_KEY not set")
         return
     r = requests.get(
-        "https://api.calorieninjas.com/v1/nutrition", params={"query": "1 apple"},
+        "https://api.api-ninjas.com/v1/nutrition", params={"query": "1 apple"},
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY}, timeout=10,
     )
     if r.ok and r.json().get("items"):
