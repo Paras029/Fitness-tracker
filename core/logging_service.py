@@ -104,6 +104,14 @@ def _resolve_ingredients(extracted_items):
 
     Returns resolved items ready for db.create_meal/add_meal_item:
     [{name, grams, nutrients_per_100g, source, confidence}, ...]
+
+    The nutrition-fill LLM call is mandatory for anything that isn't
+    already complete: it runs once as a batch for efficiency, but a batch
+    call can drop an item from its response (token limits, the model just
+    not covering everything) or fail outright -- so a second, per-item
+    pass follows up individually on anything still missing its core
+    macros afterward. That per-item retry is also what "locks in" a full
+    estimate when the APIs found nothing at all for an ingredient.
     """
     looked_up = []
     for it in extracted_items:
@@ -115,9 +123,11 @@ def _resolve_ingredients(extracted_items):
             "source": source, "cache_row": cache_row,
         })
 
-    # Cache hits are already-confirmed data (previously logged/corrected) --
-    # no need to spend an LLM call re-deriving them.
-    need_fill = [l for l in looked_up if l["source"] != "cache"]
+    # Cache hits from a food already confirmed complete skip the batch
+    # call -- no need to spend an LLM call re-deriving known-good data.
+    # Incomplete cache hits (e.g. cached back when Gemini was
+    # quota-exhausted) still go through, which self-heals them over time.
+    need_fill = [l for l in looked_up if not (l["source"] == "cache" and _has_core_macros(l["api_data"]))]
     filled_by_name = {}
     if need_fill:
         fill_result = gemini.fill_nutrition([
@@ -130,7 +140,7 @@ def _resolve_ingredients(extracted_items):
 
     resolved = []
     for l in looked_up:
-        if l["source"] == "cache":
+        if l["source"] == "cache" and _has_core_macros(l["api_data"]):
             resolved.append({
                 "name": l["name"], "grams": l["grams"],
                 "nutrients_per_100g": l["api_data"], "source": "cache", "confidence": "database",
@@ -150,7 +160,32 @@ def _resolve_ingredients(extracted_items):
             "name": l["name"], "grams": l["grams"], "nutrients_per_100g": merged,
             "source": l["source"] or "gemini_estimate", "confidence": confidence,
         })
+
+    _lock_in_missing_macros(resolved)
     return resolved
+
+
+def _lock_in_missing_macros(resolved):
+    """Second-chance individual fill_nutrition call for any item still
+    missing its core macros after the batch pass -- a focused single-item
+    prompt succeeds far more reliably than hoping a big batch call covers
+    every item. Mutates `resolved` in place."""
+    stragglers = [it for it in resolved if not _has_core_macros(it["nutrients_per_100g"])]
+    for item in stragglers:
+        fill_result = gemini.fill_nutrition([{
+            "name": item["name"], "api_data": item["nutrients_per_100g"], "api_source": item["source"],
+        }])
+        items = fill_result.get("items") if fill_result else None
+        if not items:
+            continue
+        fit = items[0]
+        merged = _clean_numeric(fit.get("nutrients_per_100g"))
+        merged.update(item["nutrients_per_100g"])  # keep whatever real API data was already there
+        item["nutrients_per_100g"] = merged
+        if _has_core_macros(merged):
+            item["confidence"] = fit.get("confidence") or "llm_estimated"
+            if item["source"] is None:
+                item["source"] = "gemini_estimate"
 
 
 # ==================== stage 1 + draft assembly ====================
