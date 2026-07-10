@@ -12,6 +12,7 @@ current free-tier model and update GEMINI_MODEL in .env.
 
 import base64
 import json
+import logging
 import re
 
 import requests
@@ -20,10 +21,12 @@ from core import config
 
 TIMEOUT = 30
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+log = logging.getLogger("gemini")
 
 
 def _call(parts, want_json=True):
     if not config.GEMINI_API_KEY:
+        log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
         return None
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
     body = {"contents": [{"parts": parts}]}
@@ -35,17 +38,23 @@ def _call(parts, want_json=True):
         )
         resp.raise_for_status()
         data = resp.json()
-    except requests.RequestException:
+    except requests.RequestException as e:
+        detail = e.response.text[:300] if getattr(e, "response", None) is not None else str(e)
+        log.warning("Gemini call to model '%s' failed: %s", config.GEMINI_MODEL, detail)
         return None
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
+        log.warning("Gemini response had no usable candidate: %s", json.dumps(data)[:300])
         return None
 
     if not want_json:
         return text
-    return _extract_json(text)
+    result = _extract_json(text)
+    if result is None:
+        log.warning("Gemini response wasn't valid JSON: %s", text[:300])
+    return result
 
 
 def _extract_json(text):

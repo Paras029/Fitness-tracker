@@ -9,34 +9,52 @@ sources and fill gaps, they don't assume every key is present.
 Field names for third-party APIs are recalled from memory and may drift as
 the providers evolve their schemas -- if a call starts returning empty
 results, check the field names against current docs before assuming the
-whole integration is broken:
+whole integration is broken, and check the printed warning below first --
+every failure here prints *why* (bad key, rate limit, network) instead of
+silently returning nothing:
   https://api-ninjas.com/api/nutrition
-  https://developer.edamam.com/food-database-api-docs
+  https://fdc.nal.usda.gov/api-guide.html
   https://openfoodfacts.github.io/openfoodfacts-server/api/
 """
 
+import logging
 import requests
 
 from core import config
 
 TIMEOUT = 10
+log = logging.getLogger("nutrition_apis")
+
+# Open Food Facts blocks the default "python-requests/x.x" User-Agent as
+# part of its anti-abuse policy -- every request needs to identify itself.
+# Harmless to send everywhere, so it's applied to all calls, not just OFF.
+DEFAULT_HEADERS = {"User-Agent": "NutritionLedger/1.0 (self-hosted personal food tracker)"}
+
+
+def _merged_headers(kwargs):
+    headers = {**DEFAULT_HEADERS, **kwargs.pop("headers", {})}
+    return headers
 
 
 def _get(url, **kwargs):
+    headers = _merged_headers(kwargs)
     try:
-        resp = requests.get(url, timeout=TIMEOUT, **kwargs)
+        resp = requests.get(url, timeout=TIMEOUT, headers=headers, **kwargs)
         resp.raise_for_status()
         return resp.json()
-    except requests.RequestException:
+    except requests.RequestException as e:
+        log.warning("GET %s failed: %s", url, e)
         return None
 
 
 def _post(url, **kwargs):
+    headers = _merged_headers(kwargs)
     try:
-        resp = requests.post(url, timeout=TIMEOUT, **kwargs)
+        resp = requests.post(url, timeout=TIMEOUT, headers=headers, **kwargs)
         resp.raise_for_status()
         return resp.json()
-    except requests.RequestException:
+    except requests.RequestException as e:
+        log.warning("POST %s failed: %s", url, e)
         return None
 
 
@@ -72,55 +90,53 @@ def parse_calorieninjas(text):
     return items
 
 
-# ---------------- Edamam Food Database ----------------
-# Free tier: 10,000 requests/month. Best for multi-ingredient recipes and
-# deeper micronutrient coverage than CalorieNinjas offers.
+# ---------------- USDA FoodData Central ----------------
+# 100% free, no approval needed. Works immediately with the public DEMO_KEY
+# (rate-limited: ~30 req/hour) -- get your own free key in seconds at
+# https://fdc.nal.usda.gov/api-key-signup for the full 1,000 req/hour.
+# Replaces Edamam, whose free tier has since gone away. Best for a single
+# food name -> deep nutrient panel; not a multi-item NLP parser like
+# CalorieNinjas, so it plays a fallback/enrichment role here.
 
-_EDAMAM_NUTRIENT_MAP = {
-    "ENERC_KCAL": "kcal",
-    "PROCNT": "protein",
-    "CHOCDF": "carbs",
-    "FAT": "fat",
-    "FIBTG": "fiber",
-    "SUGAR": "sugar",
-    "NA": "sodium",
-    "K": "potassium",
-    "VITC": "vitamin_c",
-    "FE": "iron",
-    "CA": "calcium",
-    "VITD": "vitamin_d",
+_USDA_NUTRIENT_ALIASES = {
+    "kcal": ("Energy",),
+    "protein": ("Protein",),
+    "carbs": ("Carbohydrate, by difference",),
+    "fat": ("Total lipid (fat)",),
+    "fiber": ("Fiber, total dietary",),
+    "sugar": ("Sugars, total including NLEA", "Sugars, total"),
+    "sodium": ("Sodium, Na",),
+    "potassium": ("Potassium, K",),
+    "vitamin_c": ("Vitamin C, total ascorbic acid",),
+    "iron": ("Iron, Fe",),
+    "calcium": ("Calcium, Ca",),
+    "vitamin_d": ("Vitamin D (D2 + D3)", "Vitamin D (D2 + D3), International Units"),
 }
+_USDA_NAME_TO_KEY = {name: key for key, names in _USDA_NUTRIENT_ALIASES.items() for name in names}
 
 
-def parse_edamam(text):
-    """Uses Edamam's ingredient parser as a single-shot lookup. This is the
-    simple path (one phrase -> best-guess food -> its per-100g/serving
-    nutrients); Edamam's more precise flow re-queries the /nutrients
-    endpoint with an exact foodId + measureURI, which is a good next step
-    if estimates from this path prove too coarse."""
-    if not config.EDAMAM_APP_ID or not config.EDAMAM_APP_KEY:
-        return None
+def parse_usda(text):
+    """Single best-guess food match with per-100g nutrients (caller scales
+    by actual portion, same as the Open Food Facts path). Biased toward
+    generic whole foods (Foundation/SR Legacy/Survey datasets) rather than
+    a random branded product that happens to mention the query term."""
     data = _get(
-        "https://api.edamam.com/api/food-database/v2/parser",
+        "https://api.nal.usda.gov/fdc/v1/foods/search",
         params={
-            "app_id": config.EDAMAM_APP_ID,
-            "app_key": config.EDAMAM_APP_KEY,
-            "ingr": text,
+            "query": text,
+            "pageSize": 1,
+            "dataType": ["Foundation", "SR Legacy", "Survey (FNDDS)"],
+            "api_key": config.USDA_API_KEY,
         },
     )
-    if not data:
+    if not data or not data.get("foods"):
         return None
-    hints = data.get("hints") or data.get("parsed")
-    if not hints:
-        return None
-    food = hints[0].get("food")
-    if not food:
-        return None
-    nutrients = food.get("nutrients", {})
-    out = {"name": food.get("label", text)}
-    for edamam_key, our_key in _EDAMAM_NUTRIENT_MAP.items():
-        if edamam_key in nutrients:
-            out[our_key] = nutrients[edamam_key]
+    food = data["foods"][0]
+    out = {"name": food.get("description", text), "per_100g": True}
+    for nutrient in food.get("foodNutrients", []):
+        our_key = _USDA_NAME_TO_KEY.get(nutrient.get("nutrientName"))
+        if our_key and our_key not in out:
+            out[our_key] = nutrient.get("value")
     return out
 
 

@@ -153,12 +153,22 @@ def post_saved_meal():
     return jsonify({"id": meal_id})
 
 
-# ---------------- quick add (text) ----------------
+# ---------------- quick add (text / photo) ----------------
 
 @app.route("/api/quickadd/parse", methods=["POST"])
 def quickadd_parse():
     text = request.get_json(force=True).get("text", "")
     items = logging_service.parse_text_entry(text)
+    return jsonify({"items": items})
+
+
+@app.route("/api/quickadd/parse-photo", methods=["POST"])
+def quickadd_parse_photo():
+    photo = request.files.get("photo")
+    if not photo:
+        return jsonify({"error": "no photo uploaded"}), 400
+    caption = request.form.get("caption", "")
+    items = logging_service.parse_photo_entry(photo.read(), photo.mimetype or "image/jpeg", caption)
     return jsonify({"items": items})
 
 

@@ -473,6 +473,13 @@
             <input type="text" id="quickInput" placeholder="e.g. “grilled chicken bowl and a coffee”" />
             <button class="btn btn-primary" id="parseBtn">Parse</button>
           </div>
+          <div class="quickadd-row" style="margin-top:8px;">
+            <button class="btn btn-ghost" id="photoBtn" style="flex:1; justify-content:center;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+              Photo of a plate or barcode
+            </button>
+            <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none;">
+          </div>
           <div class="parsed" id="parsedBox">
             <div class="ph">Parsed</div>
             <div id="parsedItems"></div>
@@ -633,6 +640,12 @@
     deleteEntry: function(id){ return fetch('/api/entries/' + id, {method:'DELETE'}).then(r=>r.json()); },
     editEntry: function(id, body){ return fetch('/api/entries/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     parse: function(text){ return fetch('/api/quickadd/parse', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:text})}).then(r=>r.json()); },
+    parsePhoto: function(file, caption){
+      var fd = new FormData();
+      fd.append('photo', file);
+      fd.append('caption', caption || '');
+      return fetch('/api/quickadd/parse-photo', {method:'POST', body: fd}).then(r=>r.json());
+    },
     confirm: function(items, mealSlot, date){ return fetch('/api/quickadd/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items:items, meal_slot:mealSlot, date:date})}).then(r=>r.json()); },
     report: function(){ return fetch('/api/report/weekly').then(r=>r.json()); },
     ask: function(question, date){ return fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:question, date:date})}).then(r=>r.json()); },
@@ -993,24 +1006,42 @@
   document.getElementById('parseBtn').addEventListener('click', doParse);
   quickInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doParse(); });
 
+  function renderParsedItems(items, emptyMessage){
+    lastParsed = items || [];
+    if(!lastParsed.length){
+      parsedItems.innerHTML = '<div class="miss">' + emptyMessage + '</div>';
+      return;
+    }
+    parsedItems.innerHTML = lastParsed.map(function(it){
+      var n = it.nutrients;
+      var tag = {database:'✓', estimated:'~', user_corrected:'✎'}[it.confidence] || '';
+      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + '</span>' +
+        '<span class="pmacros num">'+Math.round(n.kcal||0)+' kcal · '+Math.round(n.protein||0)+'p '+Math.round(n.carbs||0)+'c '+Math.round(n.fat||0)+'f</span></div>';
+    }).join('');
+  }
+
   function doParse(){
     var text = quickInput.value.trim();
     if(!text) return;
     parsedBox.classList.add('show');
     parsedItems.innerHTML = '<div class="miss">Parsing…</div>';
     api.parse(text).then(function(res){
-      lastParsed = res.items || [];
-      if(!lastParsed.length){
-        parsedItems.innerHTML = '<div class="miss">Couldn\'t parse that -- try rephrasing, or check that at least one nutrition API key is set in .env.</div>';
-        return;
-      }
-      parsedItems.innerHTML = lastParsed.map(function(it){
-        var n = it.nutrients;
-        return '<div class="parsed-item"><span class="pname">'+it.name+'</span>' +
-          '<span class="pmacros num">'+Math.round(n.kcal||0)+' kcal · '+Math.round(n.protein||0)+'p '+Math.round(n.carbs||0)+'c '+Math.round(n.fat||0)+'f</span></div>';
-      }).join('');
+      renderParsedItems(res.items, 'Couldn\'t parse that -- try rephrasing, or run <code>python -m scripts.check_setup</code> to check your API keys.');
     });
   }
+
+  var photoInput = document.getElementById('photoInput');
+  document.getElementById('photoBtn').addEventListener('click', function(){ photoInput.click(); });
+  photoInput.addEventListener('change', function(){
+    var file = photoInput.files[0];
+    if(!file) return;
+    parsedBox.classList.add('show');
+    parsedItems.innerHTML = '<div class="miss">Looking at the photo…</div>';
+    api.parsePhoto(file, quickInput.value.trim()).then(function(res){
+      renderParsedItems(res.items, 'Couldn\'t identify food in that photo -- try a clearer shot, or check GEMINI_API_KEY with <code>python -m scripts.check_setup</code>.');
+    });
+    photoInput.value = '';
+  });
   document.getElementById('parsedCancel').addEventListener('click', function(){
     parsedBox.classList.remove('show'); quickInput.value=''; lastParsed=[];
   });

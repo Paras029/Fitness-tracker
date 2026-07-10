@@ -4,9 +4,11 @@ call into -- neither talks to the nutrition APIs or Gemini directly.
 
 Resolution order for text:
     1. local food cache (free, instant, tuned to what you actually eat)
-    2. CalorieNinjas (fast NLP parse)
-    3. Gemini estimate (fallback when nothing above matched)
-Edamam is used opportunistically to fill in missing fiber/micronutrient
+    2. CalorieNinjas (fast multi-item NLP parse)
+    3. USDA FoodData Central, as a single-item fallback if CalorieNinjas
+       found nothing (e.g. no key configured, or it genuinely missed)
+    4. Gemini estimate (last resort, when nothing above matched)
+USDA is also used opportunistically to fill in missing fiber/micronutrient
 fields on a CalorieNinjas hit, since CalorieNinjas' schema is macro-focused.
 """
 
@@ -47,20 +49,25 @@ def _from_cache_hit(row):
     }
 
 
-def _enrich_with_edamam(item):
+def _enrich_with_usda(item):
     """Fills in missing fiber/micronutrient fields on an existing item using
-    Edamam, without overwriting fields we already trust."""
+    USDA FoodData Central, without overwriting fields we already trust."""
     missing = [k for k in ("fiber", "sodium", "potassium", "vitamin_c", "iron", "calcium", "vitamin_d")
                if item["nutrients"].get(k) is None]
     if not missing:
         return item
-    edamam = nutrition_apis.parse_edamam(item["name"])
-    if not edamam:
+    usda = nutrition_apis.parse_usda(item["name"])
+    if not usda:
         return item
     for k in missing:
-        if edamam.get(k) is not None:
-            item["nutrients"][k] = round(float(edamam[k]), 2)
+        if usda.get(k) is not None:
+            item["nutrients"][k] = round(float(usda[k]), 2)
     return item
+
+
+def _scale_per_100g(nutrients, grams):
+    factor = grams / 100.0
+    return {k: round(v * factor, 2) for k, v in nutrients.items() if isinstance(v, (int, float))}
 
 
 def parse_text_entry(text):
@@ -75,8 +82,22 @@ def parse_text_entry(text):
         for it in ninja_items:
             nutrients = {k: v for k, v in it.items() if k in NUTRIENT_KEYS and v is not None}
             item = {"name": it["name"], "nutrients": nutrients, "source": "calorieninjas", "confidence": "database"}
-            items.append(_enrich_with_edamam(item))
+            items.append(_enrich_with_usda(item))
         return items
+
+    usda_hit = nutrition_apis.parse_usda(text)
+    if usda_hit:
+        grams = _extract_grams(text) or 100
+        nutrients = _scale_per_100g(
+            {k: v for k, v in usda_hit.items() if k in NUTRIENT_KEYS}, grams
+        )
+        if nutrients.get("kcal"):
+            return [{
+                "name": usda_hit.get("name", text),
+                "nutrients": nutrients,
+                "source": "usda",
+                "confidence": "database" if _extract_grams(text) else "estimated",
+            }]
 
     gemini_items = gemini.estimate_food_from_text(text)
     if gemini_items:
@@ -91,11 +112,6 @@ def parse_text_entry(text):
         ]
 
     return []
-
-
-def _scale_per_100g(nutrients, grams):
-    factor = grams / 100.0
-    return {k: round(v * factor, 2) for k, v in nutrients.items() if isinstance(v, (int, float))}
 
 
 def parse_photo_entry(image_bytes, mime_type, caption=""):

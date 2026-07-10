@@ -11,8 +11,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 CALORIENINJAS_API_KEY = os.environ.get("CALORIENINJAS_API_KEY", "")
-EDAMAM_APP_ID = os.environ.get("EDAMAM_APP_ID", "")
-EDAMAM_APP_KEY = os.environ.get("EDAMAM_APP_KEY", "")
+# USDA FoodData Central: works out of the box with the public DEMO_KEY
+# (rate-limited, ~30 req/hour) -- get your own free key instantly at
+# https://fdc.nal.usda.gov/api-key-signup for 1,000 req/hour.
+USDA_API_KEY = os.environ.get("USDA_API_KEY") or "DEMO_KEY"
 
 DB_PATH = Path(os.environ.get("DB_PATH") or (ROOT_DIR / "data" / "nutrition.db"))
 API_PORT = int(os.environ.get("API_PORT") or "8001")
