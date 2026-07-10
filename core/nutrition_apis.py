@@ -1,10 +1,15 @@
 """Thin clients for the free-tier nutrition data APIs.
 
-Every function returns a normalized dict subset of:
+Every lookup function takes a single ingredient name (or a barcode) and
+returns one normalized dict, ALWAYS per 100g of that food:
     {kcal, protein, carbs, fat, fiber, sugar, sodium, potassium,
-     vitamin_c, iron, calcium, vitamin_d}
-Missing values are simply omitted -- callers merge results from multiple
-sources and fill gaps, they don't assume every key is present.
+     vitamin_c, iron, calcium, vitamin_d}  (subset -- missing keys are
+     simply omitted, callers merge results from multiple sources and fill
+     gaps, they don't assume every key is present)
+or None if the food wasn't found. The per-100g contract is uniform across
+every source (including CalorieNinjas, which is queried as "100g of X" to
+force it into this shape) precisely so the caller never needs to know or
+care which source answered -- it just scales by the actual logged grams.
 
 Field names for third-party APIs are recalled from memory and may drift as
 the providers evolve their schemas -- if a call starts returning empty
@@ -60,13 +65,11 @@ def _post(url, **kwargs):
 
 
 # ---------------- CalorieNinjas ----------------
-# Free tier: 10,000 requests/month. Great at parsing a natural-language
-# description ("1 bowl of dal and 2 rotis") straight into itemized macros.
+# Free tier: 10,000 requests/month.
 
 def _safe_float(v):
     """API-Ninjas sends the literal string "NaN" (not null) for a field it
-    couldn't confidently compute -- e.g. calories/protein on an
-    under-specified compound dish name, while still guessing carbs/fat from
+    couldn't confidently compute, while still guessing other fields from
     defaults. float("NaN") parses "successfully" into a real NaN, which then
     poisons any arithmetic downstream (renders as "NaN" in the UI). Treat
     anything that isn't a finite number as genuinely missing."""
@@ -77,33 +80,36 @@ def _safe_float(v):
         return None
 
 
-def parse_calorieninjas(text):
-    """Returns a list of {name, kcal, protein, carbs, fat, fiber, sugar,
-    sodium, potassium} dicts, one per food item CalorieNinjas detected."""
+_CALORIENINJAS_FIELD_MAP = {
+    "kcal": "calories", "protein": "protein_g", "carbs": "carbohydrates_total_g",
+    "fat": "fat_total_g", "fiber": "fiber_g", "sugar": "sugar_g",
+    "sodium": "sodium_mg", "potassium": "potassium_mg",
+}
+
+
+def parse_calorieninjas(name):
+    """Per-100g nutrient lookup for a single named ingredient. Queried as
+    "100g of X" so the API's natural-language parser returns a fixed
+    reference quantity rather than whatever default serving it would
+    otherwise assume -- that's what makes the result comparable to USDA's
+    and Open Food Facts' per-100g data."""
     if not config.CALORIENINJAS_API_KEY:
-        return []
+        return None
     data = _get(
         "https://api.api-ninjas.com/v1/nutrition",
-        params={"query": text},
+        params={"query": f"100g {name}"},
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY},
     )
     # This endpoint returns a bare JSON array, not {"items": [...]}.
-    if not data or not isinstance(data, list):
-        return []
-    items = []
-    for it in data:
-        items.append({
-            "name": it.get("name", text),
-            "kcal": _safe_float(it.get("calories")),
-            "protein": _safe_float(it.get("protein_g")),
-            "carbs": _safe_float(it.get("carbohydrates_total_g")),
-            "fat": _safe_float(it.get("fat_total_g")),
-            "fiber": _safe_float(it.get("fiber_g")),
-            "sugar": _safe_float(it.get("sugar_g")),
-            "sodium": _safe_float(it.get("sodium_mg")),
-            "potassium": _safe_float(it.get("potassium_mg")),
-        })
-    return items
+    if not data or not isinstance(data, list) or not data[0]:
+        return None
+    it = data[0]  # one ingredient queried -> take the single best match
+    out = {"name": it.get("name", name), "per_100g": True}
+    for our_key, api_key in _CALORIENINJAS_FIELD_MAP.items():
+        val = _safe_float(it.get(api_key))
+        if val is not None:
+            out[our_key] = val
+    return out
 
 
 # ---------------- USDA FoodData Central ----------------

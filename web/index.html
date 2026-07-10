@@ -240,21 +240,40 @@
   .parsed-actions select{ font-size:12px; border:1px solid var(--line-strong); border-radius:6px; padding:5px 8px; background:var(--paper-raised); color:var(--ink); font-family:'Instrument Sans'; }
   .miss{ font-size:12.5px; color:var(--ink-muted); }
 
-  .ledger-card{ padding:20px 22px 10px; }
-  .meal-group{ margin-top:16px; }
-  .meal-group:first-of-type{ margin-top:14px; }
-  .meal-title{ display:flex; justify-content:space-between; align-items:baseline; font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
-  .meal-title .mkcal{ font-family:'IBM Plex Mono',monospace; font-weight:400; letter-spacing:0; text-transform:none; }
-  .ledger-row{ display:flex; align-items:center; gap:12px; padding:10px 2px; border-bottom:1px solid var(--line); }
-  .ledger-row .lname{ flex:1; font-size:13.5px; }
-  .ledger-row .ltag{ font-size:10px; color:var(--ink-faint); }
-  .ledger-row .lkcal{ font-size:13px; width:56px; text-align:right; }
-  .ledger-row .lactions{ display:flex; gap:4px; opacity:0; transition:opacity .1s; }
-  .ledger-row:hover .lactions{ opacity:1; }
-  .lactions button{ width:24px; height:24px; border-radius:6px; border:none; background:transparent; color:var(--ink-faint); cursor:pointer; display:flex; align-items:center; justify-content:center; }
-  .lactions button:hover{ background:var(--paper-sunk); color:var(--critical); }
-  .lactions svg{ width:13px; height:13px; }
+  .ledger-card{ padding:20px 22px 14px; }
+  .slot-group{ margin-top:18px; }
+  .slot-group:first-of-type{ margin-top:14px; }
+  .slot-title{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
   .empty-day{ font-size:13px; color:var(--ink-faint); padding:20px 2px; }
+
+  .meal-card{ border:1px solid var(--line); border-radius:9px; margin-bottom:8px; overflow:hidden; }
+  .meal-card-head{ display:flex; align-items:center; gap:10px; padding:11px 13px; cursor:pointer; }
+  .meal-card-head:hover{ background:var(--paper-sunk); }
+  .mc-chevron{ color:var(--ink-faint); font-size:11px; transition:transform .15s ease; flex:none; }
+  .meal-card.open .mc-chevron{ transform:rotate(90deg); }
+  .mc-label{ font-size:13.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mc-conf-dot{ width:6px; height:6px; border-radius:50%; flex:none; }
+  .mc-rating{ font-size:11.5px; color:var(--ink-muted); white-space:nowrap; }
+  .mc-macros{ font-size:11px; color:var(--ink-faint); white-space:nowrap; }
+  .mc-kcal{ font-size:13.5px; font-weight:600; width:70px; text-align:right; flex:none; }
+  .meal-card-body{ display:none; padding:0 13px 13px; border-top:1px solid var(--line); }
+  .meal-card.open .meal-card-body{ display:block; }
+  .mc-rating-note{ font-size:12px; color:var(--ink-muted); padding:10px 0 2px; font-style:italic; }
+  .mc-item{ display:flex; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .mc-item:last-of-type{ border-bottom:none; }
+  .mc-item-name{ flex:1; min-width:0; }
+  .mc-item-tag{ font-size:10px; color:var(--ink-faint); margin-left:4px; }
+  .mc-item-grams{ width:52px; border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px; font-size:12px; background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:right; }
+  .mc-item-unit{ font-size:11px; color:var(--ink-faint); }
+  .mc-item-kcal{ font-size:12.5px; width:56px; text-align:right; color:var(--ink-muted); }
+  .mc-item-del{ width:22px; height:22px; border:none; background:transparent; color:var(--ink-faint); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:none; }
+  .mc-item-del:hover{ background:var(--paper-sunk); color:var(--critical); }
+  .mc-item-del svg{ width:12px; height:12px; }
+  .mc-add-row{ display:flex; gap:6px; margin-top:10px; }
+  .mc-add-row input{ flex:1; border:1px solid var(--line-strong); border-radius:6px; padding:6px 9px; font-size:12.5px; background:var(--paper-sunk); color:var(--ink); font-family:'Instrument Sans'; }
+  .mc-add-row button{ font-size:11.5px; padding:6px 10px; border-radius:6px; border:1px solid var(--line-strong); background:transparent; color:var(--ink-muted); cursor:pointer; }
+  .mc-footer{ display:flex; justify-content:flex-end; margin-top:10px; }
+  .mc-delete-meal{ font-size:11px; color:var(--critical); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
 
   .insights-card{ padding:18px 20px; }
   .insight-body{ font-size:13px; line-height:1.6; color:var(--ink-muted); }
@@ -539,20 +558,6 @@
   </main>
 </div>
 
-<div class="modal-backdrop" id="editModal">
-  <div class="modal">
-    <h3>Edit entry</h3>
-    <div class="field"><label>Name</label><input id="editName" type="text"></div>
-    <div class="field"><label>Calories (kcal)</label><input id="editKcal" type="number"></div>
-    <div class="field"><label>Protein (g)</label><input id="editProtein" type="number"></div>
-    <div class="field"><label>Carbs (g)</label><input id="editCarbs" type="number"></div>
-    <div class="field"><label>Fat (g)</label><input id="editFat" type="number"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="editCancel">Cancel</button>
-      <button class="btn btn-primary" id="editSave">Save</button>
-    </div>
-  </div>
-</div>
 
 <div class="modal-backdrop" id="settingsModal">
   <div class="modal wide">
@@ -637,8 +642,10 @@
     day: function(date){ return fetch('/api/day/' + date).then(r=>r.json()); },
     contribution: function(date, key){ return fetch('/api/day/' + date + '/contribution/' + key).then(r=>r.json()); },
     trends: function(days){ return fetch('/api/trends?days=' + days).then(r=>r.json()); },
-    deleteEntry: function(id){ return fetch('/api/entries/' + id, {method:'DELETE'}).then(r=>r.json()); },
-    editEntry: function(id, body){ return fetch('/api/entries/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteMeal: function(mealId){ return fetch('/api/meals/' + mealId, {method:'DELETE'}).then(r=>r.json()); },
+    addMealItem: function(mealId, body){ return fetch('/api/meals/' + mealId + '/items', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    editMealItem: function(itemId, body){ return fetch('/api/meals/items/' + itemId, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteMealItem: function(itemId){ return fetch('/api/meals/items/' + itemId, {method:'DELETE'}).then(r=>r.json()); },
     parse: function(text){ return fetch('/api/quickadd/parse', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:text})}).then(r=>r.json()); },
     parsePhoto: function(file, caption){
       var fd = new FormData();
@@ -646,7 +653,10 @@
       fd.append('caption', caption || '');
       return fetch('/api/quickadd/parse-photo', {method:'POST', body: fd}).then(r=>r.json());
     },
-    confirm: function(items, mealSlot, date){ return fetch('/api/quickadd/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({items:items, meal_slot:mealSlot, date:date})}).then(r=>r.json()); },
+    confirm: function(draft, mealSlot, date){
+      var body = Object.assign({}, draft, {meal_slot: mealSlot, date: date});
+      return fetch('/api/quickadd/confirm', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json());
+    },
     report: function(){ return fetch('/api/report/weekly').then(r=>r.json()); },
     ask: function(question, date){ return fetch('/api/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:question, date:date})}).then(r=>r.json()); },
     nutrientDefs: function(){ return fetch('/api/settings/nutrients').then(r=>r.json()); },
@@ -667,6 +677,11 @@
   // ---------------- day rendering ----------------
 
   function renderDay(summary){
+    renderHeroAndMicros(summary);
+    renderMeals(summary.meals || []);
+  }
+
+  function renderHeroAndMicros(summary){
     state.lastDaySummary = summary;
     document.getElementById('dateDay').textContent = dayLabel(summary.date) + (summary.date === todayISO() ? ' · Today' : '');
     document.getElementById('dateSub').textContent = summary.date.toUpperCase();
@@ -683,13 +698,13 @@
     document.getElementById('kcalPct').textContent = (kcal.target ? Math.round(100*kcal.value/kcal.target) : 0) + '%';
     var pct = kcal.target ? Math.min(kcal.value / kcal.target, 1) : 0;
     document.getElementById('kcalRing').style.strokeDashoffset = 301.6 * (1 - pct);
-    document.getElementById('entryCount').textContent = summary.entry_count;
+    document.getElementById('entryCount').textContent = summary.meal_count;
 
     var mini = document.getElementById('miniMeals');
     mini.innerHTML = '';
     var byMeal = {};
-    (summary.entries || []).forEach(function(e){
-      byMeal[e.meal_slot] = (byMeal[e.meal_slot] || 0) + (e.nutrients.kcal || 0);
+    (summary.meals || []).forEach(function(m){
+      byMeal[m.meal_slot] = (byMeal[m.meal_slot] || 0) + (m.totals.kcal || 0);
     });
     Object.keys(byMeal).forEach(function(slot){
       var el = document.createElement('div');
@@ -739,8 +754,6 @@
         '<div class="micro-track"><div class="micro-fill" style="width:' + (pctm*100) + '%; background:' + color + '"></div></div>';
       mg.appendChild(wrap);
     });
-
-    renderLedger(summary.entries || []);
   }
 
   function toggleContribution(row, key, label){
@@ -766,80 +779,152 @@
     });
   }
 
-  function renderLedger(entries){
+  var CONFIDENCE_STATUS = {
+    database: 'good', cache: 'good', user_corrected: 'good',
+    llm_filled: 'warning',
+    llm_estimated: 'critical', estimated: 'critical',
+  };
+  var CONFIDENCE_TAG = {
+    database: '✓', cache: '✓', user_corrected: '✎',
+    llm_filled: '~', llm_estimated: '~', estimated: '~',
+  };
+
+  function worstConfidence(items){
+    var order = {good:0, warning:1, critical:2};
+    var worst = 'good';
+    items.forEach(function(it){
+      var s = CONFIDENCE_STATUS[it.confidence] || 'warning';
+      if(order[s] > order[worst]) worst = s;
+    });
+    return worst;
+  }
+
+  function renderMeals(meals){
     var ledger = document.getElementById('ledger');
     ledger.innerHTML = '';
-    if(!entries.length){
+    if(!meals.length){
       ledger.innerHTML = '<div class="empty-day">Nothing logged for this day yet.</div>';
       return;
     }
     var groups = {};
-    entries.forEach(function(e){ (groups[e.meal_slot] = groups[e.meal_slot] || []).push(e); });
+    meals.forEach(function(m){ (groups[m.meal_slot] = groups[m.meal_slot] || []).push(m); });
     var slots = Object.keys(groups).sort(function(a,b){
       var ia = MEAL_ORDER.indexOf(a), ib = MEAL_ORDER.indexOf(b);
       return (ia<0?99:ia) - (ib<0?99:ib);
     });
     slots.forEach(function(slot){
-      var items = groups[slot];
-      var kcalSum = items.reduce(function(a,e){ return a + (e.nutrients.kcal||0); }, 0);
-      var g = document.createElement('div');
-      g.className = 'meal-group';
-      var rows = items.map(function(e){
-        var n = e.nutrients;
-        var tag = {database:'✓ verified', estimated:'~ estimated', user_corrected:'✎ edited'}[e.confidence] || '';
-        return '<div class="ledger-row" data-id="' + e.id + '">' +
-          '<div class="lname">' + e.name + '<div class="ltag">' + tag + '</div></div>' +
-          '<div class="lkcal num">' + fmt(n.kcal||0) + '</div>' +
-          '<div class="lactions">' +
-            '<button class="edit-btn" aria-label="Edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>' +
-            '<button class="del-btn" aria-label="Delete"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg></button>' +
-          '</div></div>';
-      }).join('');
-      g.innerHTML = '<div class="meal-title"><span>' + (MEAL_LABEL[slot]||slot) + '</span><span class="mkcal">' + fmt(kcalSum) + ' kcal</span></div>' + rows;
-      ledger.appendChild(g);
-    });
-
-    ledger.querySelectorAll('.del-btn').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.closest('.ledger-row').dataset.id;
-        api.deleteEntry(id).then(function(){ toast('Deleted.'); loadDay(state.date); });
-      });
-    });
-    ledger.querySelectorAll('.edit-btn').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var id = btn.closest('.ledger-row').dataset.id;
-        openEditModal(id);
-      });
+      var slotMeals = groups[slot];
+      var slotKcal = slotMeals.reduce(function(a,m){ return a + (m.totals.kcal||0); }, 0);
+      var section = document.createElement('div');
+      section.className = 'slot-group';
+      section.innerHTML = '<div class="slot-title">' + (MEAL_LABEL[slot]||slot) + ' &middot; <span class="num">' + fmt(slotKcal) + ' kcal</span></div>';
+      slotMeals.forEach(function(m){ section.appendChild(renderMealCard(m)); });
+      ledger.appendChild(section);
     });
   }
 
-  // ---------------- edit modal ----------------
-  var editModal = document.getElementById('editModal');
-  var editingId = null;
-  function openEditModal(id){
-    var entry = (state.lastDaySummary.entries || []).find(function(e){ return String(e.id) === String(id); });
-    if(!entry) return;
-    editingId = id;
-    document.getElementById('editName').value = entry.name;
-    document.getElementById('editKcal').value = entry.nutrients.kcal || 0;
-    document.getElementById('editProtein').value = entry.nutrients.protein || 0;
-    document.getElementById('editCarbs').value = entry.nutrients.carbs || 0;
-    document.getElementById('editFat').value = entry.nutrients.fat || 0;
-    editModal.classList.add('show');
-  }
-  document.getElementById('editCancel').addEventListener('click', function(){ editModal.classList.remove('show'); });
-  document.getElementById('editSave').addEventListener('click', function(){
-    var nutrients = {
-      kcal: +document.getElementById('editKcal').value,
-      protein: +document.getElementById('editProtein').value,
-      carbs: +document.getElementById('editCarbs').value,
-      fat: +document.getElementById('editFat').value,
-    };
-    var name = document.getElementById('editName').value;
-    api.editEntry(editingId, {name:name, nutrients:nutrients}).then(function(){
-      editModal.classList.remove('show'); toast('Saved.'); loadDay(state.date);
+  function renderMealCard(meal){
+    var card = document.createElement('div');
+    card.className = 'meal-card';
+    card.dataset.mealId = meal.id;
+    var t = meal.totals;
+    var status = worstConfidence(meal.items);
+    var ratingHtml = meal.rating_score != null
+      ? '<span class="mc-rating">⭐ ' + meal.rating_score + '/10</span>' : '';
+    card.innerHTML =
+      '<div class="meal-card-head">' +
+        '<span class="mc-chevron">▸</span>' +
+        '<span class="mc-conf-dot" style="background:var(--' + status + ')"></span>' +
+        '<span class="mc-label">' + meal.label + '</span>' +
+        ratingHtml +
+        '<span class="mc-macros num">P' + Math.round(t.protein||0) + ' C' + Math.round(t.carbs||0) + ' F' + Math.round(t.fat||0) + '</span>' +
+        '<span class="mc-kcal num">' + fmt(t.kcal||0) + ' kcal</span>' +
+      '</div>' +
+      '<div class="meal-card-body"></div>';
+    card.querySelector('.meal-card-head').addEventListener('click', function(){
+      card.classList.toggle('open');
+      if(card.classList.contains('open')) renderMealBody(card, meal);
     });
-  });
+    return card;
+  }
+
+  function renderMealBody(card, meal){
+    var body = card.querySelector('.meal-card-body');
+    var html = '';
+    if(meal.rating_note){ html += '<div class="mc-rating-note">"' + meal.rating_note + (meal.rating_label ? '" -- ' + meal.rating_label : '"') + '</div>'; }
+    meal.items.forEach(function(it){
+      var tag = CONFIDENCE_TAG[it.confidence] || '~';
+      html +=
+        '<div class="mc-item" data-item-id="' + it.id + '">' +
+          '<span class="mc-item-name">' + it.name + '<span class="mc-item-tag">' + tag + '</span></span>' +
+          '<input type="number" class="mc-item-grams" value="' + Math.round(it.grams) + '">' +
+          '<span class="mc-item-unit">g</span>' +
+          '<span class="mc-item-kcal num">' + fmt(it.nutrients.kcal||0) + '</span>' +
+          '<button class="mc-item-del" aria-label="Remove ingredient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg></button>' +
+        '</div>';
+    });
+    html +=
+      '<div class="mc-add-row">' +
+        '<input type="text" class="mc-add-input" placeholder="Add an ingredient…">' +
+        '<button class="mc-add-btn">Add</button>' +
+      '</div>' +
+      '<div class="mc-footer"><button class="mc-delete-meal">Delete whole meal</button></div>';
+    body.innerHTML = html;
+
+    body.querySelectorAll('.mc-item-grams').forEach(function(input){
+      var commit = function(){
+        var itemId = input.closest('.mc-item').dataset.itemId;
+        var grams = parseFloat(input.value);
+        if(!grams || grams <= 0) return;
+        api.editMealItem(itemId, {grams: grams}).then(function(res){
+          toast('Updated.'); onMealUpdated(card, res.meal);
+        });
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('keydown', function(e){ if(e.key==='Enter') input.blur(); });
+    });
+    body.querySelectorAll('.mc-item-del').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var itemId = btn.closest('.mc-item').dataset.itemId;
+        api.deleteMealItem(itemId).then(function(res){
+          toast('Removed.');
+          if(res.meal_deleted){ card.remove(); loadStreak(); }
+          else { onMealUpdated(card, res.meal); }
+        });
+      });
+    });
+    var addInput = body.querySelector('.mc-add-input');
+    var addBtn = body.querySelector('.mc-add-btn');
+    function doAdd(){
+      var name = addInput.value.trim();
+      if(!name) return;
+      addBtn.textContent = 'Adding…'; addBtn.disabled = true;
+      api.addMealItem(meal.id, {name: name}).then(function(res){
+        addBtn.textContent = 'Add'; addBtn.disabled = false;
+        toast(name + ' added.');
+        onMealUpdated(card, res.meal);
+      });
+    }
+    addBtn.addEventListener('click', doAdd);
+    addInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doAdd(); });
+
+    body.querySelector('.mc-delete-meal').addEventListener('click', function(){
+      api.deleteMeal(meal.id).then(function(){ toast('Meal deleted.'); card.remove(); loadStreak(); loadTrends(state.rangeDays); });
+    });
+  }
+
+  function onMealUpdated(card, updatedMeal){
+    // Re-render this one card in place and keep it open, rather than a
+    // full ledger refresh that would collapse every card back down.
+    var fresh = renderMealCard(updatedMeal);
+    fresh.classList.add('open');
+    card.replaceWith(fresh);
+    renderMealBody(fresh, updatedMeal);
+    // Hero/micronutrient numbers and trends still need the fresh totals,
+    // just not by re-rendering the ledger.
+    api.day(state.date).then(renderHeroAndMicros);
+    loadTrends(state.rangeDays);
+  }
 
   // ---------------- date nav ----------------
 
@@ -1001,7 +1086,7 @@
   var quickInput = document.getElementById('quickInput');
   var parsedBox = document.getElementById('parsedBox');
   var parsedItems = document.getElementById('parsedItems');
-  var lastParsed = [];
+  var lastDraft = null;
 
   document.getElementById('parseBtn').addEventListener('click', doParse);
   quickInput.addEventListener('keydown', function(e){ if(e.key==='Enter') doParse(); });
@@ -1010,19 +1095,23 @@
     return (typeof v === 'number' && isFinite(v)) ? v : 0;
   }
 
-  function renderParsedItems(items, emptyMessage){
-    lastParsed = items || [];
-    if(!lastParsed.length){
-      parsedItems.innerHTML = '<div class="miss">' + emptyMessage + '</div>';
+  function renderDraft(draft, emptyMessage){
+    lastDraft = draft;
+    if(draft.error || !draft.items || !draft.items.length){
+      parsedItems.innerHTML = '<div class="miss">' + (draft.error || emptyMessage) + '</div>';
       return;
     }
-    parsedItems.innerHTML = lastParsed.map(function(it){
+    var html = '';
+    if(draft.meal_label){ html += '<div class="ph" style="margin-bottom:6px; text-transform:none; font-family:inherit; font-size:13px; color:var(--ink);">' + draft.meal_label + '</div>'; }
+    html += draft.items.map(function(it){
       var n = it.nutrients;
-      var tag = {database:'✓', estimated:'~', user_corrected:'✎'}[it.confidence] || '';
-      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + '</span>' +
+      var tag = CONFIDENCE_TAG[it.confidence] || '~';
+      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + ' <span style="color:var(--ink-faint); font-weight:400;">(' + Math.round(it.grams) + 'g)</span></span>' +
         '<span class="pmacros num">'+Math.round(safeNum(n.kcal))+' kcal · '+Math.round(safeNum(n.protein))+'p '+
         Math.round(safeNum(n.carbs))+'c '+Math.round(safeNum(n.fat))+'f '+Math.round(safeNum(n.fiber))+'fb</span></div>';
     }).join('');
+    if(draft.notes){ html += '<div class="miss" style="margin-top:6px;">Note: ' + draft.notes + '</div>'; }
+    parsedItems.innerHTML = html;
   }
 
   function doParse(){
@@ -1031,7 +1120,7 @@
     parsedBox.classList.add('show');
     parsedItems.innerHTML = '<div class="miss">Parsing…</div>';
     api.parse(text).then(function(res){
-      renderParsedItems(res.items, 'Couldn\'t parse that -- try rephrasing, or run <code>python -m scripts.check_setup</code> to check your API keys.');
+      renderDraft(res, 'Couldn\'t parse that -- try rephrasing, or run <code>python -m scripts.check_setup</code> to check your API keys.');
     });
   }
 
@@ -1043,18 +1132,18 @@
     parsedBox.classList.add('show');
     parsedItems.innerHTML = '<div class="miss">Looking at the photo…</div>';
     api.parsePhoto(file, quickInput.value.trim()).then(function(res){
-      renderParsedItems(res.items, 'Couldn\'t identify food in that photo -- try a clearer shot, or check GEMINI_API_KEY with <code>python -m scripts.check_setup</code>.');
+      renderDraft(res, 'Couldn\'t identify food in that photo -- try a clearer shot, or check GEMINI_API_KEY with <code>python -m scripts.check_setup</code>.');
     });
     photoInput.value = '';
   });
   document.getElementById('parsedCancel').addEventListener('click', function(){
-    parsedBox.classList.remove('show'); quickInput.value=''; lastParsed=[];
+    parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null;
   });
   document.getElementById('parsedAdd').addEventListener('click', function(){
-    if(!lastParsed.length) return;
+    if(!lastDraft || !lastDraft.items || !lastDraft.items.length) return;
     var slot = document.getElementById('mealSlotPick').value;
-    api.confirm(lastParsed, slot, state.date).then(function(){
-      toast('Logged.'); parsedBox.classList.remove('show'); quickInput.value=''; lastParsed=[];
+    api.confirm(lastDraft, slot, state.date).then(function(){
+      toast('Logged.'); parsedBox.classList.remove('show'); quickInput.value=''; lastDraft=null;
       loadDay(state.date);
       loadStreak();
     });
@@ -1163,6 +1252,11 @@
 
   // ---------------- saved meals ----------------
 
+  function itemAbsoluteKcal(it){
+    var factor = safeNum(it.grams || 100) / 100;
+    return safeNum((it.nutrients_per_100g || {}).kcal) * factor;
+  }
+
   function loadSavedMeals(){
     var list = document.getElementById('savedMealsList');
     api.savedMeals().then(function(meals){
@@ -1172,7 +1266,7 @@
       }
       list.innerHTML = '';
       meals.forEach(function(m){
-        var kcal = m.items.reduce(function(a,it){ return a + (it.nutrients.kcal||0); }, 0);
+        var kcal = m.items.reduce(function(a,it){ return a + itemAbsoluteKcal(it); }, 0);
         var row = document.createElement('div');
         row.className = 'saved-meal-row';
         row.innerHTML =
@@ -1185,7 +1279,11 @@
           '<button class="btn btn-primary" style="padding:5px 10px; font-size:12px;">Log</button>';
         row.querySelector('button').addEventListener('click', function(){
           var slot = row.querySelector('.sm-slot').value;
-          api.confirm(m.items, slot, state.date).then(function(){
+          var draft = {
+            items: m.items.map(function(it){ return Object.assign({source:'saved', confidence:'database'}, it); }),
+            meal_label: m.name, raw_input: null,
+          };
+          api.confirm(draft, slot, state.date).then(function(){
             toast(m.name + ' logged.'); loadDay(state.date); loadStreak();
           });
         });
@@ -1195,10 +1293,11 @@
   }
 
   document.getElementById('parsedSaveMeal').addEventListener('click', function(){
-    if(!lastParsed.length){ toast('Parse something first.'); return; }
+    if(!lastDraft || !lastDraft.items || !lastDraft.items.length){ toast('Parse something first.'); return; }
     var name = window.prompt('Name this meal (e.g. "My usual breakfast"):');
     if(!name) return;
-    api.createSavedMeal(name.trim(), lastParsed).then(function(){
+    var items = lastDraft.items.map(function(it){ return {name: it.name, grams: it.grams, nutrients_per_100g: it.nutrients_per_100g}; });
+    api.createSavedMeal(name.trim(), items).then(function(){
       toast('Saved as "' + name.trim() + '".');
       loadSavedMeals();
     });

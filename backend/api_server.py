@@ -44,9 +44,7 @@ def cors_preflight(_unused):
 
 @app.route("/api/day/<date>")
 def day_summary(date):
-    summary = logging_service.build_day_summary(date)
-    entries = db.get_day_entries(date)
-    return jsonify({**summary, "entries": entries})
+    return jsonify(logging_service.build_day_summary(date))
 
 
 @app.route("/api/day/<date>/contribution/<nutrient_key>")
@@ -54,17 +52,38 @@ def day_contribution(date, nutrient_key):
     return jsonify(logging_service.nutrient_contribution(date, nutrient_key))
 
 
-@app.route("/api/entries/<int:entry_id>", methods=["PUT"])
-def edit_entry(entry_id):
-    body = request.get_json(force=True)
-    ok = logging_service.apply_correction(entry_id, body.get("nutrients", {}), body.get("name"))
-    return jsonify({"ok": ok})
+# ---------------- meals & items ----------------
 
-
-@app.route("/api/entries/<int:entry_id>", methods=["DELETE"])
-def delete_entry(entry_id):
-    db.delete_log_entry(entry_id)
+@app.route("/api/meals/<int:meal_id>", methods=["DELETE"])
+def delete_meal(meal_id):
+    logging_service.delete_meal(meal_id)
     return jsonify({"ok": True})
+
+
+@app.route("/api/meals/<int:meal_id>/items", methods=["POST"])
+def add_meal_item(meal_id):
+    body = request.get_json(force=True)
+    meal, item_id = logging_service.add_item_to_meal(meal_id, body["name"], body.get("grams"))
+    return jsonify({"meal": meal, "item_id": item_id})
+
+
+@app.route("/api/meals/items/<int:item_id>", methods=["PUT"])
+def edit_meal_item(item_id):
+    body = request.get_json(force=True)
+    meal = logging_service.edit_item(
+        item_id, grams=body.get("grams"), name=body.get("name"),
+        nutrients_per_100g=body.get("nutrients_per_100g"),
+    )
+    if meal is None:
+        return jsonify({"error": "item not found"}), 404
+    return jsonify({"meal": meal})
+
+
+@app.route("/api/meals/items/<int:item_id>", methods=["DELETE"])
+def delete_meal_item(item_id):
+    meal_id = logging_service.delete_item(item_id)
+    meal = db.get_meal(meal_id) if meal_id else None
+    return jsonify({"ok": True, "meal": meal, "meal_deleted": meal is None})
 
 
 # ---------------- trends ----------------
@@ -75,12 +94,12 @@ def trends():
     days = int(request.args.get("days", 7))
     end_dt = datetime.strptime(end, "%Y-%m-%d")
     start_dt = end_dt - timedelta(days=days - 1)
-    entries = db.get_range_entries(start_dt.strftime("%Y-%m-%d"), end)
+    meals = db.get_range_meals(start_dt.strftime("%Y-%m-%d"), end)
 
     by_date = {}
-    for e in entries:
-        d = by_date.setdefault(e["log_date"], {})
-        for k, v in e["nutrients"].items():
+    for m in meals:
+        d = by_date.setdefault(m["log_date"], {})
+        for k, v in m["totals"].items():
             d[k] = d.get(k, 0) + db.safe_num(v)
 
     series = []
@@ -154,12 +173,13 @@ def post_saved_meal():
 
 
 # ---------------- quick add (text / photo) ----------------
+# Returns a *draft* -- nothing is saved until /api/quickadd/confirm.
 
 @app.route("/api/quickadd/parse", methods=["POST"])
 def quickadd_parse():
     text = request.get_json(force=True).get("text", "")
-    items = logging_service.parse_text_entry(text)
-    return jsonify({"items": items})
+    draft = logging_service.build_meal_draft(text=text)
+    return jsonify(draft)
 
 
 @app.route("/api/quickadd/parse-photo", methods=["POST"])
@@ -168,18 +188,22 @@ def quickadd_parse_photo():
     if not photo:
         return jsonify({"error": "no photo uploaded"}), 400
     caption = request.form.get("caption", "")
-    items = logging_service.parse_photo_entry(photo.read(), photo.mimetype or "image/jpeg", caption)
-    return jsonify({"items": items})
+    draft = logging_service.build_meal_draft(
+        image_bytes=photo.read(), mime_type=photo.mimetype or "image/jpeg", caption=caption,
+    )
+    return jsonify(draft)
 
 
 @app.route("/api/quickadd/confirm", methods=["POST"])
 def quickadd_confirm():
     body = request.get_json(force=True)
-    ids = logging_service.confirm_and_log(
-        body["items"], body.get("meal_slot", "snack"),
-        raw_input=body.get("raw_input"), log_date=body.get("date"),
-    )
-    return jsonify({"entry_ids": ids})
+    draft = {
+        "items": body["items"], "meal_label": body.get("meal_label"),
+        "extraction_confidence": body.get("extraction_confidence"),
+        "raw_input": body.get("raw_input"),
+    }
+    meal = logging_service.confirm_meal(draft, body.get("meal_slot", "snack"), log_date=body.get("date"))
+    return jsonify({"meal": meal})
 
 
 # ---------------- reports & ask ----------------
