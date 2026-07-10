@@ -36,6 +36,7 @@ current free-tier model and update GEMINI_MODEL in .env, or run
 import base64
 import json
 import logging
+import os
 import re
 
 import requests
@@ -45,6 +46,7 @@ from core import config
 TIMEOUT = 30
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 log = logging.getLogger("gemini")
+DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
 
 NUTRIENT_FIELDS = (
     "kcal, protein, carbs, fat, fiber, sugar, sodium, potassium, "
@@ -59,7 +61,10 @@ def _call(parts, want_json=True):
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
     body = {"contents": [{"parts": parts}]}
     if want_json:
-        body["generationConfig"] = {"response_mime_type": "application/json"}
+        body["generationConfig"] = {"responseMimeType": "application/json"}
+    if DEBUG:
+        log.warning("Gemini request body: %s", json.dumps(body)[:2000])
+
     try:
         resp = requests.post(
             url, params={"key": config.GEMINI_API_KEY}, json=body, timeout=TIMEOUT
@@ -67,14 +72,28 @@ def _call(parts, want_json=True):
         resp.raise_for_status()
         data = resp.json()
     except requests.RequestException as e:
-        detail = e.response.text[:300] if getattr(e, "response", None) is not None else str(e)
-        log.warning("Gemini call to model '%s' failed: %s", config.GEMINI_MODEL, detail)
+        detail = e.response.text if getattr(e, "response", None) is not None else str(e)
+        log.warning("Gemini call to model '%s' failed: %s", config.GEMINI_MODEL, detail if DEBUG else detail[:300])
         return None
+
+    if DEBUG:
+        log.warning("Gemini raw response: %s", json.dumps(data)[:4000])
+
+    candidates = data.get("candidates") or []
+    finish_reason = candidates[0].get("finishReason") if candidates else data.get("promptFeedback", {}).get("blockReason")
+    if finish_reason and finish_reason not in ("STOP", None):
+        # Common ones: MAX_TOKENS (response got cut off -- bump maxOutputTokens
+        # or shorten the prompt), SAFETY / PROHIBITED_CONTENT (a food photo or
+        # description tripped a safety filter), RECITATION.
+        log.warning("Gemini finished with reason '%s' instead of a normal stop -- "
+                    "this usually means the response was blocked or truncated, not a bug in the request.",
+                    finish_reason)
 
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
-        log.warning("Gemini response had no usable candidate: %s", json.dumps(data)[:300])
+        log.warning("Gemini response had no usable candidate (finishReason=%s): %s",
+                    finish_reason, json.dumps(data)[:300])
         return None
 
     if not want_json:

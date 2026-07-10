@@ -47,11 +47,25 @@ def check_gemini():
     names = [m["name"].replace("models/", "") for m in r.json().get("models", [])
              if "generateContent" in m.get("supportedGenerationMethods", [])]
     configured = config.GEMINI_MODEL
-    if configured in names:
-        print(f"[{PASS}] Gemini        -- key valid, '{configured}' is available")
-    else:
+    if configured not in names:
         print(f"[{FAIL}] Gemini        -- key valid, but GEMINI_MODEL='{configured}' is NOT in the "
               f"available list. Try one of: {', '.join(names[:8])}")
+        return
+    print(f"[{PASS}] Gemini        -- key valid, '{configured}' is available")
+
+    # Listing models only proves the key is valid -- it does NOT prove an
+    # actual generateContent call with our JSON-mode request works (wrong
+    # region, model needs a different API version, safety filters, etc).
+    # Run a real extraction call, the same one food-logging uses.
+    from core import gemini
+    result = gemini.extract_ingredients(text="a banana")
+    if result and result.get("items"):
+        print(f"[{PASS}] Gemini extract-- real generateContent call works: "
+              f"parsed 'a banana' -> {result['items'][0]['name']} ({result['items'][0]['grams']}g)")
+    else:
+        print(f"[{FAIL}] Gemini extract-- the model/key list-check passed, but an actual extraction "
+              f"call returned nothing. Re-run with GEMINI_DEBUG=1 for the raw response:\n"
+              f"    GEMINI_DEBUG=1 python -m scripts.check_setup")
 
 
 def check_calorieninjas():
