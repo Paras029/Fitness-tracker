@@ -48,20 +48,28 @@ _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 log = logging.getLogger("gemini")
 DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
 
-NUTRIENT_FIELDS = (
-    "kcal, protein, carbs, fat, fiber, sugar, sodium, potassium, "
-    "vitamin_c, iron, calcium, vitamin_d"
-)
+NUTRIENT_KEYS = [
+    "kcal", "protein", "carbs", "fat", "fiber", "sugar",
+    "sodium", "potassium", "vitamin_c", "iron", "calcium", "vitamin_d",
+]
 
 
-def _call(parts, want_json=True):
+def _call(parts, want_json=True, response_schema=None, max_output_tokens=None):
     if not config.GEMINI_API_KEY:
         log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
         return None
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
     body = {"contents": [{"parts": parts}]}
     if want_json:
-        body["generationConfig"] = {"responseMimeType": "application/json"}
+        gen_config = {"responseMimeType": "application/json"}
+        if response_schema:
+            # A schema *constrains* generation -- required fields genuinely
+            # cannot be omitted, which is a much stronger guarantee than
+            # asking nicely in the prompt text and hoping it's followed.
+            gen_config["responseSchema"] = response_schema
+        if max_output_tokens:
+            gen_config["maxOutputTokens"] = max_output_tokens
+        body["generationConfig"] = gen_config
     if DEBUG:
         log.warning("Gemini request body: %s", json.dumps(body)[:2000])
 
@@ -155,6 +163,31 @@ _EXTRACTION_INSTRUCTIONS = (
 )
 
 
+_EXTRACT_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "items": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "grams": {"type": "NUMBER"},
+                    "grams_confidence": {"type": "STRING", "enum": ["explicit", "assumed"]},
+                    "is_packaged": {"type": "BOOLEAN"},
+                    "barcode": {"type": "STRING", "nullable": True},
+                },
+                "required": ["name", "grams", "grams_confidence"],
+            },
+        },
+        "meal_label": {"type": "STRING"},
+        "extraction_confidence": {"type": "STRING", "enum": ["high", "medium", "low"]},
+        "notes": {"type": "STRING", "nullable": True},
+    },
+    "required": ["items", "extraction_confidence"],
+}
+
+
 def extract_ingredients(text=None, image_bytes=None, mime_type=None, caption=None):
     """Returns the parsed dict described above, or None on total failure
     (caller should treat that as "couldn't parse, ask the user to retry
@@ -177,7 +210,7 @@ def extract_ingredients(text=None, image_bytes=None, mime_type=None, caption=Non
     else:
         parts[0]["text"] += f'\n\nThe user\'s description: "{text}"'
 
-    result = _call(parts)
+    result = _call(parts, response_schema=_EXTRACT_RESPONSE_SCHEMA, max_output_tokens=2048)
     if not isinstance(result, dict) or "items" not in result:
         return None
     result.setdefault("meal_label", None)
@@ -200,41 +233,83 @@ def extract_ingredients(text=None, image_bytes=None, mime_type=None, caption=Non
 # ]}
 
 _NUTRITION_INSTRUCTIONS = (
-    "You are a nutrition data assistant. For each food item below you're given "
-    "its name and whatever per-100g nutrition data a food database API already "
-    "found (possibly empty). Rules:\n\n"
-    "1. Treat any API-provided field as ground truth -- do not change it unless "
-    "it is clearly, obviously wrong for this food (e.g. a unit error), and if "
-    "you do override it, explain why in \"notes\".\n"
-    "2. Fill in every field the API didn't provide, per 100g of the named food, "
-    "using your own nutrition knowledge.\n"
-    "3. If the API gave nothing useful for an item, estimate its full profile "
-    "yourself.\n\n"
-    f"Required fields per item, all values per 100g: {NUTRIENT_FIELDS}.\n\n"
+    "You are a nutrition data assistant. You will receive a JSON array of "
+    "{count} food item(s), each with its name and whatever per-100g nutrition "
+    "data a food database API already found (possibly empty for some items).\n\n"
+    "Rules:\n"
+    "1. You MUST return exactly {count} item(s) in your response, in the same "
+    "order given, one output object per input item -- never skip, merge, or "
+    "drop an item, even if you are unsure of the values.\n"
+    "2. kcal, protein, carbs, and fat are REQUIRED for every item -- always "
+    "provide your best estimate for these four, even a rough one, rather than "
+    "omitting them. The other fields (fiber, sugar, sodium, potassium, "
+    "vitamin_c, iron, calcium, vitamin_d) should be included whenever you can "
+    "reasonably estimate them, but may be omitted if truly unknown.\n"
+    "3. Treat any API-provided field as ground truth -- do not change it "
+    "unless it is clearly, obviously wrong for this food (e.g. a unit error), "
+    "and if you do override it, explain why in \"notes\".\n"
+    "4. Fill in every field the API didn't provide, per 100g of the named "
+    "food, using your own nutrition knowledge. If the API gave nothing at "
+    "all for an item, estimate its full profile yourself -- a reasonable "
+    "estimate is always better than a missing value.\n\n"
     "Set \"confidence\" per item to:\n"
     "- \"database\" if kcal/protein/carbs/fat all came from the API (you only "
     "filled minor gaps like fiber or micronutrients)\n"
     "- \"llm_filled\" if the API gave some but not all core macro fields\n"
     "- \"llm_estimated\" if the API gave nothing usable and this is entirely "
     "your estimate\n\n"
-    "Items:\n{items_json}\n\n"
-    "Respond with JSON only: {\"items\": [{\"name\":str, "
-    "\"nutrients_per_100g\": {" + NUTRIENT_FIELDS + "}, "
-    "\"confidence\":str, \"notes\":str|null}, ...]}"
+    "Items:\n{items_json}"
 )
+
+_NUTRIENT_PROPS = {k: {"type": "NUMBER"} for k in NUTRIENT_KEYS}
+_FILL_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "items": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "nutrients_per_100g": {
+                        "type": "OBJECT",
+                        "properties": _NUTRIENT_PROPS,
+                        # Constrains generation, not just the prompt text --
+                        # the model cannot emit an item missing these.
+                        "required": ["kcal", "protein", "carbs", "fat"],
+                    },
+                    "confidence": {"type": "STRING", "enum": ["database", "llm_filled", "llm_estimated"]},
+                    "notes": {"type": "STRING", "nullable": True},
+                },
+                "required": ["name", "nutrients_per_100g", "confidence"],
+            },
+        },
+    },
+    "required": ["items"],
+}
 
 
 def fill_nutrition(items):
     """items: [{"name", "grams", "api_data" (dict, per-100g, may be partial
     or empty), "api_source"}]. Returns {"items": [...]} in the shape above,
     or None if the call failed entirely (caller falls back to whatever
-    partial API data it already has, tagged low-confidence)."""
+    partial API data it already has, tagged low-confidence).
+
+    Called at most twice per meal regardless of ingredient count (an
+    initial batch covering everything, and one batched retry for whatever
+    that first call still left incomplete) -- never once per ingredient,
+    to stay well inside tight daily quotas."""
     if not items:
         return {"items": []}
     payload = [{"name": it["name"], "known_data_per_100g": it.get("api_data") or {},
                 "known_data_source": it.get("api_source")} for it in items]
-    prompt = _NUTRITION_INSTRUCTIONS.replace("{items_json}", json.dumps(payload))
-    result = _call([{"text": prompt}])
+    prompt = (_NUTRITION_INSTRUCTIONS
+              .replace("{count}", str(len(items)))
+              .replace("{items_json}", json.dumps(payload)))
+    # ~150 tokens/item is generous for a 12-field nutrient object; floor of
+    # 400 covers the fixed overhead for a single-item call.
+    max_tokens = min(max(400, 150 * len(items)), 8192)
+    result = _call([{"text": prompt}], response_schema=_FILL_RESPONSE_SCHEMA, max_output_tokens=max_tokens)
     if not isinstance(result, dict) or "items" not in result:
         return None
     return result
@@ -260,12 +335,23 @@ _RATING_INSTRUCTIONS = (
 )
 
 
+_RATING_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "score": {"type": "INTEGER"},
+        "label": {"type": "STRING"},
+        "note": {"type": "STRING"},
+    },
+    "required": ["score", "label", "note"],
+}
+
+
 def rate_meal(label, meal_slot, items, totals):
     items_str = ", ".join(f"{it['name']} ({it.get('grams', '?')}g)" for it in items)
     prompt = _RATING_INSTRUCTIONS.format(
         label=label, meal_slot=meal_slot, items=items_str, totals=json.dumps(totals)
     )
-    result = _call([{"text": prompt}])
+    result = _call([{"text": prompt}], response_schema=_RATING_RESPONSE_SCHEMA, max_output_tokens=300)
     if not isinstance(result, dict) or "score" not in result:
         return None
     return result

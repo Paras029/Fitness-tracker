@@ -28,6 +28,14 @@ _last_logged = {}
 
 MEAL_EMOJI = {"breakfast": "\U0001F305", "lunch": "\U0001F372", "dinner": "\U0001F307", "snack": "\U0001F34E"}
 CONFIDENCE_TAG = {"database": "✓", "cache": "✓", "llm_filled": "~", "llm_estimated": "~", "estimated": "~", "user_corrected": "✎"}
+CORE_MACROS = ("kcal", "protein", "carbs", "fat")
+
+
+def missing_macros(nutrients):
+    # A field that's genuinely unknown is ABSENT from the dict -- never
+    # present-as-zero -- so this only flags real gaps, not real zeros
+    # (black coffee's kcal is legitimately ~0).
+    return [k for k in CORE_MACROS if k not in nutrients]
 
 
 def guess_meal_slot():
@@ -50,8 +58,10 @@ def fmt_items(items):
         kcal = n.get("kcal", 0) or 0
         total_kcal += kcal
         tag = CONFIDENCE_TAG.get(it.get("confidence"), "~")
+        missing = missing_macros(n)
+        warn = f" ⚠️ _missing {', '.join(missing)}_" if missing else ""
         lines.append(f"{tag} *{it['name']}* ({it.get('grams', '?'):.0f}g) -- {kcal:.0f} kcal "
-                      f"(P {n.get('protein', 0):.0f}g / C {n.get('carbs', 0):.0f}g / F {n.get('fat', 0):.0f}g)")
+                      f"(P {n.get('protein', 0):.0f}g / C {n.get('carbs', 0):.0f}g / F {n.get('fat', 0):.0f}g){warn}")
     lines.append(f"\n*Total: {total_kcal:.0f} kcal*")
     return "\n".join(lines)
 

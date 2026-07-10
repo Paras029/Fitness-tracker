@@ -105,13 +105,14 @@ def _resolve_ingredients(extracted_items):
     Returns resolved items ready for db.create_meal/add_meal_item:
     [{name, grams, nutrients_per_100g, source, confidence}, ...]
 
-    The nutrition-fill LLM call is mandatory for anything that isn't
-    already complete: it runs once as a batch for efficiency, but a batch
-    call can drop an item from its response (token limits, the model just
-    not covering everything) or fail outright -- so a second, per-item
-    pass follows up individually on anything still missing its core
-    macros afterward. That per-item retry is also what "locks in" a full
-    estimate when the APIs found nothing at all for an ingredient.
+    The nutrition-fill LLM call runs as a batch (fill_nutrition's schema
+    requires kcal/protein/carbs/fat on every item it returns, which is
+    what actually prevents most drops -- constraining generation beats
+    asking nicely in the prompt). If anything is still incomplete after
+    that -- a genuinely dropped item, or the whole call failing -- there's
+    exactly one batched retry, covering only the stragglers together.
+    Never one call per ingredient: with daily LLM quotas this tight, a
+    5-ingredient meal can't cost 5 extra requests.
     """
     looked_up = []
     for it in extracted_items:
@@ -128,15 +129,7 @@ def _resolve_ingredients(extracted_items):
     # Incomplete cache hits (e.g. cached back when Gemini was
     # quota-exhausted) still go through, which self-heals them over time.
     need_fill = [l for l in looked_up if not (l["source"] == "cache" and _has_core_macros(l["api_data"]))]
-    filled_by_name = {}
-    if need_fill:
-        fill_result = gemini.fill_nutrition([
-            {"name": l["name"], "api_data": l["api_data"], "api_source": l["source"]}
-            for l in need_fill
-        ])
-        if fill_result:
-            for fit in fill_result.get("items", []):
-                filled_by_name[_norm_name(fit.get("name", ""))] = fit
+    filled_by_name = _batch_fill(need_fill)
 
     resolved = []
     for l in looked_up:
@@ -161,24 +154,42 @@ def _resolve_ingredients(extracted_items):
             "source": l["source"] or "gemini_estimate", "confidence": confidence,
         })
 
-    _lock_in_missing_macros(resolved)
+    _retry_missing_macros_once(resolved)
     return resolved
 
 
-def _lock_in_missing_macros(resolved):
-    """Second-chance individual fill_nutrition call for any item still
-    missing its core macros after the batch pass -- a focused single-item
-    prompt succeeds far more reliably than hoping a big batch call covers
-    every item. Mutates `resolved` in place."""
+def _batch_fill(need_fill):
+    """One fill_nutrition call covering every item in need_fill. Returns a
+    dict of normalized-name -> filled item, empty if the call failed."""
+    if not need_fill:
+        return {}
+    fill_result = gemini.fill_nutrition([
+        {"name": l["name"], "api_data": l["api_data"], "api_source": l["source"]}
+        for l in need_fill
+    ])
+    if not fill_result:
+        return {}
+    return {_norm_name(fit.get("name", "")): fit for fit in fill_result.get("items", [])}
+
+
+def _retry_missing_macros_once(resolved):
+    """A single additional BATCHED fill_nutrition call -- not one per
+    ingredient -- covering only whatever is still missing a core macro
+    after the first pass. Mutates `resolved` in place."""
     stragglers = [it for it in resolved if not _has_core_macros(it["nutrients_per_100g"])]
+    if not stragglers:
+        return
+    fill_result = gemini.fill_nutrition([
+        {"name": it["name"], "api_data": it["nutrients_per_100g"], "api_source": it["source"]}
+        for it in stragglers
+    ])
+    if not fill_result:
+        return
+    filled_by_name = {_norm_name(f.get("name", "")): f for f in fill_result.get("items", [])}
     for item in stragglers:
-        fill_result = gemini.fill_nutrition([{
-            "name": item["name"], "api_data": item["nutrients_per_100g"], "api_source": item["source"],
-        }])
-        items = fill_result.get("items") if fill_result else None
-        if not items:
+        fit = filled_by_name.get(_norm_name(item["name"]))
+        if not fit:
             continue
-        fit = items[0]
         merged = _clean_numeric(fit.get("nutrients_per_100g"))
         merged.update(item["nutrients_per_100g"])  # keep whatever real API data was already there
         item["nutrients_per_100g"] = merged

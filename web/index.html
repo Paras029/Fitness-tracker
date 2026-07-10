@@ -263,6 +263,8 @@
   .mc-item:last-of-type{ border-bottom:none; }
   .mc-item-name{ flex:1; min-width:0; }
   .mc-item-tag{ font-size:10px; color:var(--ink-faint); margin-left:4px; }
+  .mc-warn{ display:inline-flex; color:var(--critical); vertical-align:middle; margin-left:5px; cursor:help; }
+  .mc-warn svg{ width:13px; height:13px; }
   .mc-item-grams{ width:52px; border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px; font-size:12px; background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:right; }
   .mc-item-unit{ font-size:11px; color:var(--ink-faint); }
   .mc-item-kcal{ font-size:12.5px; width:56px; text-align:right; color:var(--ink-muted); }
@@ -789,6 +791,25 @@
     llm_filled: '~', llm_estimated: '~', estimated: '~',
   };
 
+  var CORE_MACROS = ['kcal', 'protein', 'carbs', 'fat'];
+  var MACRO_LABEL = {kcal: 'calories', protein: 'protein', carbs: 'carbs', fat: 'fat'};
+
+  // A field that's genuinely unknown is ABSENT from nutrients_per_100g --
+  // never present-as-zero. That's what lets this tell "no data" apart from
+  // "measured and it's really zero" (black coffee's kcal really is ~0).
+  // Only a missing KEY warrants the warning; a present 0 never does.
+  function missingMacros(nutrientsPer100g){
+    return CORE_MACROS.filter(function(k){ return !(k in (nutrientsPer100g || {})); });
+  }
+
+  function warningBadge(nutrientsPer100g){
+    var missing = missingMacros(nutrientsPer100g);
+    if(!missing.length) return '';
+    var label = missing.map(function(k){ return MACRO_LABEL[k]; }).join(', ');
+    return '<span class="mc-warn" title="Missing: ' + label + ' -- couldn\'t be determined, edit to add it manually">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4M12 17h.01"/></svg></span>';
+  }
+
   function worstConfidence(items){
     var order = {good:0, warning:1, critical:2};
     var worst = 'good';
@@ -856,7 +877,7 @@
       var tag = CONFIDENCE_TAG[it.confidence] || '~';
       html +=
         '<div class="mc-item" data-item-id="' + it.id + '">' +
-          '<span class="mc-item-name">' + it.name + '<span class="mc-item-tag">' + tag + '</span></span>' +
+          '<span class="mc-item-name">' + it.name + '<span class="mc-item-tag">' + tag + '</span>' + warningBadge(it.nutrients_per_100g) + '</span>' +
           '<input type="number" class="mc-item-grams" value="' + Math.round(it.grams) + '">' +
           '<span class="mc-item-unit">g</span>' +
           '<span class="mc-item-kcal num">' + fmt(it.nutrients.kcal||0) + '</span>' +
@@ -1106,7 +1127,7 @@
     html += draft.items.map(function(it){
       var n = it.nutrients;
       var tag = CONFIDENCE_TAG[it.confidence] || '~';
-      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + ' <span style="color:var(--ink-faint); font-weight:400;">(' + Math.round(it.grams) + 'g)</span></span>' +
+      return '<div class="parsed-item"><span class="pname">' + tag + ' ' + it.name + ' <span style="color:var(--ink-faint); font-weight:400;">(' + Math.round(it.grams) + 'g)</span>' + warningBadge(it.nutrients_per_100g) + '</span>' +
         '<span class="pmacros num">'+Math.round(safeNum(n.kcal))+' kcal · '+Math.round(safeNum(n.protein))+'p '+
         Math.round(safeNum(n.carbs))+'c '+Math.round(safeNum(n.fat))+'f '+Math.round(safeNum(n.fiber))+'fb</span></div>';
     }).join('');
