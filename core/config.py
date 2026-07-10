@@ -14,10 +14,10 @@ CALORIENINJAS_API_KEY = os.environ.get("CALORIENINJAS_API_KEY", "")
 EDAMAM_APP_ID = os.environ.get("EDAMAM_APP_ID", "")
 EDAMAM_APP_KEY = os.environ.get("EDAMAM_APP_KEY", "")
 
-DB_PATH = Path(os.environ.get("DB_PATH", ROOT_DIR / "data" / "nutrition.db"))
-API_PORT = int(os.environ.get("API_PORT", "8001"))
+DB_PATH = Path(os.environ.get("DB_PATH") or (ROOT_DIR / "data" / "nutrition.db"))
+API_PORT = int(os.environ.get("API_PORT") or "8001")
 
 # Local timezone offset used to bucket "today" for the bot / reports.
 # Set to your IANA zone if you add zoneinfo handling later; for now a fixed
 # UTC offset in hours keeps this dependency-free for Termux.
-LOCAL_UTC_OFFSET_HOURS = float(os.environ.get("LOCAL_UTC_OFFSET_HOURS", "0"))
+LOCAL_UTC_OFFSET_HOURS = float(os.environ.get("LOCAL_UTC_OFFSET_HOURS") or "0")
