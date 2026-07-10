@@ -122,19 +122,68 @@
   .main{ padding:26px 34px 60px; max-width:1360px; }
   .topbar{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px; margin-bottom:22px; flex-wrap:wrap; }
   .topbar h1{ font-size:28px; margin-top:2px; }
-  .datenav{ display:flex; align-items:center; gap:10px; }
+  .datenav{ display:flex; align-items:center; gap:10px; position:relative; }
   .datenav button.arrow{
     width:30px; height:30px; border-radius:7px; border:1px solid var(--line-strong); background:var(--paper-raised);
     color:var(--ink-muted); cursor:pointer; display:flex; align-items:center; justify-content:center;
   }
   .datenav button.arrow:hover{ color:var(--ink); border-color:var(--ink-faint); }
-  .dateline{ text-align:center; min-width:168px; }
+  .dateline{
+    text-align:center; min-width:168px; cursor:pointer; padding:4px 12px; border-radius:8px;
+    transition:background .15s ease;
+  }
+  .dateline:hover, .dateline.open{ background:var(--paper-sunk); }
   .dateline .day{ font-family:'Young Serif',serif; font-size:17px; }
   .dateline .sub{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-faint); letter-spacing:.04em; }
+
+  .cal-pop{
+    position:absolute; top:100%; left:50%; margin-top:8px; width:270px; z-index:15;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:12px;
+    box-shadow:var(--shadow); padding:14px;
+    opacity:0; pointer-events:none; transform:translateX(-50%) translateY(4px) scale(.97);
+    transform-origin:top center; transition:opacity .15s ease, transform .15s ease;
+  }
+  .cal-pop.show{ opacity:1; pointer-events:auto; transform:translateX(-50%) translateY(0) scale(1); }
+  .cal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .cal-month{ font-family:'Young Serif',serif; font-size:15px; }
+  .cal-nav{
+    width:24px; height:24px; border-radius:6px; border:1px solid var(--line-strong); background:transparent;
+    color:var(--ink-muted); cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .cal-nav:hover{ color:var(--ink); border-color:var(--ink-faint); background:var(--paper-sunk); }
+  .cal-weekdays{
+    display:grid; grid-template-columns:repeat(7,1fr); font-family:'IBM Plex Mono',monospace;
+    font-size:10px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.03em;
+    text-align:center; margin-bottom:4px;
+  }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+  .cal-cell{
+    aspect-ratio:1; display:flex; align-items:center; justify-content:center; position:relative;
+    font-size:12px; font-family:'IBM Plex Mono',monospace; border-radius:7px; border:none; background:transparent;
+    color:var(--ink); cursor:pointer; padding:0;
+  }
+  .cal-cell.out{ color:var(--ink-faint); opacity:.38; cursor:default; }
+  .cal-cell:not(.out):hover{ background:var(--paper-sunk); }
+  .cal-cell.today{ box-shadow:inset 0 0 0 1.5px var(--accent); font-weight:700; }
+  .cal-cell.selected{ background:var(--accent); color:var(--accent-ink); font-weight:700; }
+  .cal-cell.selected.today{ box-shadow:none; }
+  .cal-dot{
+    position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
+    width:3px; height:3px; border-radius:50%; background:var(--amber);
+  }
+  .cal-cell.selected .cal-dot{ background:var(--accent-ink); }
+  .cal-today-btn{
+    width:100%; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); border-left:none;
+    border-right:none; border-bottom:none; background:transparent; color:var(--accent); font-size:11.5px;
+    font-weight:600; cursor:pointer; font-family:'IBM Plex Mono',monospace; text-transform:uppercase;
+    letter-spacing:.05em;
+  }
+  .cal-today-btn:hover{ text-decoration:underline; }
   .topbar-actions{ display:flex; gap:10px; }
   .btn{
     font-size:13.5px; font-weight:600; padding:9px 16px; border-radius:8px; border:1px solid transparent;
     cursor:pointer; display:inline-flex; align-items:center; gap:7px;
+    transition:filter .15s ease, color .15s ease, border-color .15s ease, background .15s ease, transform .08s ease;
   }
   .btn svg{ width:14px; height:14px; }
   .btn-primary{ background:var(--accent); color:var(--accent-ink); }
@@ -142,6 +191,23 @@
   .btn-ghost{ background:transparent; border-color:var(--line-strong); color:var(--ink-muted); }
   .btn-ghost:hover{ color:var(--ink); border-color:var(--ink-faint); }
   .btn:disabled{ opacity:.5; cursor:default; }
+  .btn:active:not(:disabled){ transform:scale(.96); }
+
+  /* Tactile press feedback + a visible, on-brand focus ring for keyboard
+     users -- applied broadly rather than per-component so nothing
+     interactive is missed. Kept off :hover/:active so it only shows for
+     keyboard/assistive-tech focus, not every mouse click. */
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+  [tabindex]:focus-visible, .cal-cell:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
+  }
+  .arrow, .navitem, .cal-nav, .theme-toggle, .mc-item-del{
+    transition:color .15s ease, background .15s ease, border-color .15s ease, transform .08s ease;
+  }
+  .arrow:active, .navitem:active, .cal-nav:active, .theme-toggle:active, .mc-item-del:active,
+  .cal-cell:not(.out):active{
+    transform:scale(.94);
+  }
 
   .card{
     background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
@@ -151,6 +217,7 @@
   .hero-row{ display:grid; grid-template-columns:1.15fr 1.35fr .95fr; gap:16px; margin-bottom:16px; }
   .hero-card{ padding:20px 22px; }
   .ring-wrap{ display:flex; align-items:center; gap:18px; margin-top:10px; }
+  #kcalRing{ transition:stroke-dashoffset .7s cubic-bezier(.2,.8,.2,1); }
   .ring-figs .kcal-left{ font-size:30px; font-weight:600; }
   .ring-figs .kcal-goal{ font-size:12px; color:var(--ink-faint); margin-top:2px; }
   .ring-figs .kcal-goal b{ color:var(--ink-muted); font-weight:600; }
@@ -283,10 +350,13 @@
   .slot-group{ margin-top:18px; }
   .slot-group:first-of-type{ margin-top:14px; }
   .slot-title{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
-  .empty-day{ font-size:13px; color:var(--ink-faint); padding:20px 2px; }
+  .empty-state{ text-align:center; padding:38px 16px 22px; }
+  .empty-illustration{ width:34px; height:34px; margin:0 auto 12px; color:var(--ink-faint); opacity:.7; }
+  .empty-title{ font-family:'Young Serif',serif; font-size:15px; color:var(--ink-muted); margin-bottom:5px; }
+  .empty-sub{ font-size:12.5px; color:var(--ink-faint); margin-bottom:16px; }
 
   .meal-card{ border:1px solid var(--line); border-radius:9px; margin-bottom:8px; overflow:hidden; }
-  .meal-card-head{ display:flex; align-items:center; gap:10px; padding:11px 13px; cursor:pointer; }
+  .meal-card-head{ display:flex; align-items:center; gap:10px; padding:11px 13px; cursor:pointer; transition:background .15s ease; }
   .meal-card-head:hover{ background:var(--paper-sunk); }
   .mc-chevron{ color:var(--ink-faint); font-size:11px; transition:transform .15s ease; flex:none; }
   .meal-card.open .mc-chevron{ transform:rotate(90deg); }
@@ -367,7 +437,11 @@
   .nutrient-row .unit{ color:var(--ink-faint); font-size:11px; width:30px; }
   .field-row{ display:flex; gap:8px; }
   .field-row .field{ flex:1; }
-  .saved-meal-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .saved-meal-row{
+    display:flex; align-items:center; gap:10px; padding:9px 6px; margin:0 -6px; border-bottom:1px solid var(--line);
+    border-radius:7px; font-size:13px; transition:background .15s ease;
+  }
+  .saved-meal-row:hover{ background:var(--paper-sunk); }
   .saved-meal-row:last-child{ border-bottom:none; }
   .saved-meal-row .smname{ flex:1; font-weight:600; }
   .saved-meal-row .smkcal{ color:var(--ink-faint); font-size:12px; }
@@ -378,6 +452,12 @@
     opacity:0; pointer-events:none; transition:.18s ease; z-index:30;
   }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  @keyframes pulse-op{ 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
+  .loading-pulse{ animation:pulse-op 1.3s ease-in-out infinite; }
+
+  @keyframes card-in{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+  .card.card-enter{ animation:card-in .45s cubic-bezier(.2,.8,.2,1) both; }
 
   @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
   @media (max-width: 1080px){
@@ -425,9 +505,23 @@
         <button class="arrow" id="prevDay" aria-label="Previous day">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
         </button>
-        <div class="dateline">
+        <div class="dateline" id="dateTrigger" tabindex="0" role="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Choose a date">
           <div class="day" id="dateDay">--</div>
           <div class="sub" id="dateSub">--</div>
+        </div>
+        <div class="cal-pop" id="calPop" role="dialog" aria-label="Choose a date">
+          <div class="cal-head">
+            <button class="cal-nav" id="calPrevMonth" aria-label="Previous month" type="button">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="cal-month" id="calMonthLabel">--</div>
+            <button class="cal-nav" id="calNextMonth" aria-label="Next month" type="button">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6 6-6"/></svg>
+            </button>
+          </div>
+          <div class="cal-weekdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+          <div class="cal-grid" id="calGrid"></div>
+          <button class="cal-today-btn" id="calTodayBtn" type="button">Jump to today</button>
         </div>
         <button class="arrow" id="nextDay" aria-label="Next day">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6 6-6"/></svg>
@@ -687,11 +781,42 @@
   }
 
   function fmt(n){ return Math.round(n).toLocaleString('en-US'); }
-  function todayISO(){ var d = new Date(); return d.toISOString().slice(0,10); }
+  var prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Count-up used for the two headline hero numbers only (kcal left/had) --
+  // "Animate 1-2 key elements max" -- everything else on the page just
+  // snaps to its new value, which keeps this meaningful instead of busy.
+  function animateNumber(el, to){
+    if(prefersReducedMotion){ el.textContent = fmt(to); return; }
+    var from = parseFloat((el.dataset.rawVal || '0')) || 0;
+    if(!isFinite(to)) to = 0;
+    el.dataset.rawVal = to;
+    var start = null, duration = 550;
+    function tick(ts){
+      if(start === null) start = ts;
+      var t = Math.min(1, (ts - start) / duration);
+      var eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = fmt(from + (to - from) * eased);
+      if(t < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  function pad2(n){ return String(n).padStart(2, '0'); }
+  // Deliberately never round-trips a calendar date through toISOString():
+  // that converts through UTC, and for any positive UTC-offset timezone
+  // (e.g. IST, UTC+5:30) local midnight lands on the *previous* UTC day --
+  // so the old shiftDate silently jumped back 2 days on "previous" and
+  // sat still on "next". todayISO uses the browser's local getters (what
+  // the person looking at the screen means by "today"); shiftDate does
+  // pure Y-M-D arithmetic via Date.UTC so no timezone ever enters it.
+  function todayISO(){
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+  }
   function shiftDate(iso, delta){
-    var d = new Date(iso + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    return d.toISOString().slice(0,10);
+    var p = iso.split('-').map(Number);
+    var d = new Date(Date.UTC(p[0], p[1]-1, p[2]));
+    d.setUTCDate(d.getUTCDate() + delta);
+    return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth()+1) + '-' + pad2(d.getUTCDate());
   }
   function dayLabel(iso){
     var d = new Date(iso + 'T00:00:00');
@@ -766,9 +891,9 @@
 
     var kcal = byKey.kcal || {value:0, target:2000};
     var left = Math.max(kcal.target - kcal.value, 0);
-    document.getElementById('kcalLeft').textContent = fmt(left);
+    animateNumber(document.getElementById('kcalLeft'), left);
     document.getElementById('kcalGoal').textContent = fmt(kcal.target);
-    document.getElementById('kcalHad').textContent = fmt(kcal.value);
+    animateNumber(document.getElementById('kcalHad'), kcal.value);
     document.getElementById('kcalPct').textContent = (kcal.target ? Math.round(100*kcal.value/kcal.target) : 0) + '%';
     var pct = kcal.target ? Math.min(kcal.value / kcal.target, 1) : 0;
     document.getElementById('kcalRing').style.strokeDashoffset = 301.6 * (1 - pct);
@@ -838,7 +963,7 @@
     }
     panel.dataset.key = key;
     panel.classList.add('show');
-    panel.innerHTML = '<div class="chead">Loading…</div>';
+    panel.innerHTML = '<div class="chead loading-pulse">Loading…</div>';
     api.contribution(state.date, key).then(function(data){
       if(!data.items || !data.items.length){
         panel.innerHTML = '<div class="chead">' + label + ' breakdown</div><div class="crow">Nothing logged yet.</div>';
@@ -896,7 +1021,19 @@
     var ledger = document.getElementById('ledger');
     ledger.innerHTML = '';
     if(!meals.length){
-      ledger.innerHTML = '<div class="empty-day">Nothing logged for this day yet.</div>';
+      var isToday = state.date === todayISO();
+      ledger.innerHTML =
+        '<div class="empty-state">' +
+          '<svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">' +
+            '<path d="M4 5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4V5Z"/>' +
+            '<path d="M20 5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6V5Z"/>' +
+          '</svg>' +
+          '<div class="empty-title">' + (isToday ? 'Nothing logged yet today' : 'Nothing logged this day') + '</div>' +
+          '<div class="empty-sub">Describe a meal in Quick add below, or snap a photo of your plate.</div>' +
+          (isToday ? '<button class="btn btn-ghost" id="emptyStateCta" type="button">Log your first meal</button>' : '') +
+        '</div>';
+      var cta = document.getElementById('emptyStateCta');
+      if(cta) cta.addEventListener('click', function(){ document.getElementById('quickInput').focus(); });
       return;
     }
     var groups = {};
@@ -1051,11 +1188,115 @@
   function loadDay(date){
     state.date = date;
     api.day(date).then(renderDay);
+    if(calState.loadedDates) renderCalendarGrid(); // keep the selected-day highlight in sync if open
   }
   document.getElementById('prevDay').addEventListener('click', function(){ loadDay(shiftDate(state.date, -1)); });
   document.getElementById('nextDay').addEventListener('click', function(){ loadDay(shiftDate(state.date, 1)); });
   document.getElementById('jumpToday').addEventListener('click', function(){ loadDay(todayISO()); });
   document.getElementById('focusQuickAdd').addEventListener('click', function(){ document.getElementById('quickInput').focus(); });
+
+  // ---------------- calendar date picker ----------------
+
+  var calState = { viewYear: null, viewMonth: null, dataDates: {}, loadedDates: false };
+  var dateTrigger = document.getElementById('dateTrigger');
+  var calPop = document.getElementById('calPop');
+
+  function isCalOpen(){ return calPop.classList.contains('show'); }
+
+  function openCalendar(){
+    var d = new Date(state.date + 'T00:00:00');
+    calState.viewYear = d.getFullYear();
+    calState.viewMonth = d.getMonth();
+    renderCalendarGrid();
+    calPop.classList.add('show');
+    dateTrigger.classList.add('open');
+    dateTrigger.setAttribute('aria-expanded', 'true');
+    if(!calState.loadedDates) loadCalendarData();
+  }
+  function closeCalendar(){
+    calPop.classList.remove('show');
+    dateTrigger.classList.remove('open');
+    dateTrigger.setAttribute('aria-expanded', 'false');
+  }
+  function toggleCalendar(){ isCalOpen() ? closeCalendar() : openCalendar(); }
+
+  dateTrigger.addEventListener('click', toggleCalendar);
+  dateTrigger.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggleCalendar(); }
+  });
+  document.addEventListener('click', function(e){
+    if(isCalOpen() && !calPop.contains(e.target) && !dateTrigger.contains(e.target)) closeCalendar();
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && isCalOpen()) closeCalendar();
+  });
+
+  function loadCalendarData(){
+    // One wide fetch covers "navigate to previous days" (the actual ask) --
+    // re-fetched only if the calendar is reopened, not on every month flip.
+    api.trends(180).then(function(data){
+      calState.dataDates = {};
+      data.series.forEach(function(d){
+        var hasData = d.totals && Object.values(d.totals).some(function(v){ return v > 0; });
+        if(hasData) calState.dataDates[d.date] = true;
+      });
+      calState.loadedDates = true;
+      renderCalendarGrid();
+    });
+  }
+
+  document.getElementById('calPrevMonth').addEventListener('click', function(){
+    calState.viewMonth--;
+    if(calState.viewMonth < 0){ calState.viewMonth = 11; calState.viewYear--; }
+    renderCalendarGrid();
+  });
+  document.getElementById('calNextMonth').addEventListener('click', function(){
+    calState.viewMonth++;
+    if(calState.viewMonth > 11){ calState.viewMonth = 0; calState.viewYear++; }
+    renderCalendarGrid();
+  });
+  document.getElementById('calTodayBtn').addEventListener('click', function(){
+    loadDay(todayISO());
+    var d = new Date();
+    calState.viewYear = d.getFullYear(); calState.viewMonth = d.getMonth();
+    renderCalendarGrid();
+    closeCalendar();
+  });
+
+  function renderCalendarGrid(){
+    var y = calState.viewYear, m = calState.viewMonth;
+    if(y == null) return;
+    document.getElementById('calMonthLabel').textContent =
+      new Date(y, m, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+
+    var firstDow = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m+1, 0).getDate();
+    var daysInPrevMonth = new Date(y, m, 0).getDate();
+    var cells = [];
+    for(var i = firstDow - 1; i >= 0; i--) cells.push({day: daysInPrevMonth - i, out: true});
+    for(var day = 1; day <= daysInMonth; day++){
+      cells.push({day: day, out: false, iso: y + '-' + pad2(m+1) + '-' + pad2(day)});
+    }
+    var next = 1;
+    while(cells.length % 7 !== 0){ cells.push({day: next++, out: true}); }
+
+    var today = todayISO();
+    var grid = document.getElementById('calGrid');
+    grid.innerHTML = cells.map(function(c){
+      if(c.out) return '<div class="cal-cell out">' + c.day + '</div>';
+      var cls = 'cal-cell';
+      if(c.iso === state.date) cls += ' selected';
+      if(c.iso === today) cls += ' today';
+      var dot = calState.dataDates[c.iso] ? '<span class="cal-dot"></span>' : '';
+      return '<button type="button" class="' + cls + '" data-date="' + c.iso + '" aria-label="' + c.iso + '">' + c.day + dot + '</button>';
+    }).join('');
+    grid.querySelectorAll('.cal-cell:not(.out)').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        loadDay(btn.dataset.date);
+        closeCalendar();
+      });
+    });
+  }
 
   // ---------------- charts ----------------
 
@@ -1250,7 +1491,10 @@
     return (typeof v === 'number' && isFinite(v)) ? v : 0;
   }
 
-  function setStatus(text){ parseStatus.textContent = text; }
+  function setStatus(text){
+    parseStatus.textContent = text;
+    parseStatus.classList.toggle('loading-pulse', text.indexOf('…') !== -1);
+  }
 
   function resetParseExtras(){
     sanityBox.classList.remove('show', 'ok', 'issue');
@@ -1412,7 +1656,9 @@
   document.getElementById('genReport').addEventListener('click', function(){
     var body = document.getElementById('reportBody');
     body.textContent = 'Generating…';
+    body.classList.add('loading-pulse');
     api.report().then(function(res){
+      body.classList.remove('loading-pulse');
       var r = res.report;
       if(!r || !r.summary){
         body.textContent = 'Report generation needs GEMINI_API_KEY set in .env.';
@@ -1437,10 +1683,11 @@
     var u = document.createElement('div'); u.className='bubble user'; u.textContent = v;
     thread.appendChild(u);
     askInput.value = '';
-    var b = document.createElement('div'); b.className='bubble bot'; b.textContent = 'Thinking…';
+    var b = document.createElement('div'); b.className='bubble bot loading-pulse'; b.textContent = 'Thinking…';
     thread.appendChild(b);
     thread.scrollTop = thread.scrollHeight;
     api.ask(v, state.date).then(function(res){
+      b.classList.remove('loading-pulse');
       b.innerHTML = res.answer || 'No answer available.';
       thread.scrollTop = thread.scrollHeight;
     });
@@ -1460,7 +1707,7 @@
 
   function loadNutrientSettings(){
     var list = document.getElementById('nutrientSettingsList');
-    list.innerHTML = '<div class="miss">Loading…</div>';
+    list.innerHTML = '<div class="miss loading-pulse">Loading…</div>';
     api.nutrientDefs().then(function(defs){
       list.innerHTML = '';
       defs.forEach(function(d){
@@ -1568,6 +1815,16 @@
   loadTrends(state.rangeDays);
   loadStreak();
   loadSavedMeals();
+
+  // One-time entrance on first paint only -- date nav / edits never
+  // replay this, since re-animating the whole page on every interaction
+  // would get tiresome fast rather than feel alive.
+  if(!prefersReducedMotion){
+    document.querySelectorAll('.card').forEach(function(card, i){
+      card.style.animationDelay = (Math.min(i, 9) * 0.05) + 's';
+      card.classList.add('card-enter');
+    });
+  }
 })();
 </script>
 </body>
