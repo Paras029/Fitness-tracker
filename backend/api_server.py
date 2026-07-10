@@ -81,7 +81,7 @@ def trends():
     for e in entries:
         d = by_date.setdefault(e["log_date"], {})
         for k, v in e["nutrients"].items():
-            d[k] = d.get(k, 0) + (v or 0)
+            d[k] = d.get(k, 0) + db.safe_num(v)
 
     series = []
     for i in range(days):

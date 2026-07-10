@@ -6,10 +6,42 @@ light, single-user load.
 """
 
 import json
+import math
 import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+
+
+def safe_num(v, default=0):
+    """Coerces a stored/incoming nutrient value to a finite float, or
+    `default` if it isn't one (None, a stray string, NaN, etc.). Used both
+    when summing values (so one bad row can't crash an aggregate endpoint)
+    and when writing them (so bad data doesn't get persisted in the first
+    place)."""
+    try:
+        f = float(v)
+        return f if math.isfinite(f) else default
+    except (TypeError, ValueError):
+        return default
+
+
+def sanitize_nutrients(nutrients):
+    """Drops (doesn't zero out) any non-numeric value before it's written.
+    Every write path -- confirm-and-log, manual edits, the food cache --
+    goes through this, so a bad value from any source (a client bug, a
+    future API quirk) can't silently corrupt stored data and crash
+    aggregate endpoints like /api/trends later. Missing stays missing
+    rather than becoming a misleading 0."""
+    out = {}
+    for k, v in (nutrients or {}).items():
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(f):
+            out[k] = f
+    return out
 
 from core import config
 
@@ -239,7 +271,7 @@ def all_food_cache():
 
 
 def upsert_food_cache(match_text, label, source, nutrients, cache_id=None):
-    payload = json.dumps(nutrients)
+    payload = json.dumps(sanitize_nutrients(nutrients))
     ts = now_iso()
     with get_conn() as conn:
         if cache_id:
@@ -266,7 +298,7 @@ def insert_log_entry(name, nutrients, meal_slot, source, confidence, raw_input=N
         cur = conn.execute(
             "INSERT INTO log_entries (logged_at, log_date, meal_slot, name, nutrients_json, "
             "source, confidence, raw_input, food_cache_id) VALUES (?,?,?,?,?,?,?,?,?)",
-            (ts, log_date or today_str(), meal_slot, name, json.dumps(nutrients),
+            (ts, log_date or today_str(), meal_slot, name, json.dumps(sanitize_nutrients(nutrients)),
              source, confidence, raw_input, food_cache_id),
         )
         return cur.lastrowid
@@ -309,7 +341,7 @@ def day_totals(log_date):
     totals = {}
     for e in entries:
         for k, v in e["nutrients"].items():
-            totals[k] = totals.get(k, 0) + (v or 0)
+            totals[k] = totals.get(k, 0) + safe_num(v)
     return totals, entries
 
 

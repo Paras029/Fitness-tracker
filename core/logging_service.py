@@ -233,6 +233,7 @@ def confirm_and_log(items, meal_slot, raw_input=None, log_date=None):
 def apply_correction(entry_id, new_nutrients, new_name=None):
     """User-edited values become the new source of truth for that food in
     the cache, so future logs of the same thing start out accurate."""
+    clean_nutrients = db.sanitize_nutrients(new_nutrients)
     with db.get_conn() as conn:
         row = conn.execute("SELECT * FROM log_entries WHERE id=?", (entry_id,)).fetchone()
         if not row:
@@ -241,10 +242,10 @@ def apply_correction(entry_id, new_nutrients, new_name=None):
         import json
         conn.execute(
             "UPDATE log_entries SET name=?, nutrients_json=?, confidence='user_corrected' WHERE id=?",
-            (name, json.dumps(new_nutrients), entry_id),
+            (name, json.dumps(clean_nutrients), entry_id),
         )
         cache_id = row["food_cache_id"]
-    db.upsert_food_cache(food_match.normalize(name), name, "user", new_nutrients, cache_id=cache_id)
+    db.upsert_food_cache(food_match.normalize(name), name, "user", clean_nutrients, cache_id=cache_id)
     return True
 
 
@@ -252,10 +253,10 @@ def nutrient_contribution(log_date, nutrient_key):
     """Ranked breakdown of which logged items contributed most to a given
     nutrient on a given day -- answers "what drove my fat today"."""
     entries = db.get_day_entries(log_date)
-    total = sum(e["nutrients"].get(nutrient_key, 0) or 0 for e in entries)
+    total = sum(db.safe_num(e["nutrients"].get(nutrient_key)) for e in entries)
     rows = []
     for e in entries:
-        val = e["nutrients"].get(nutrient_key, 0) or 0
+        val = db.safe_num(e["nutrients"].get(nutrient_key))
         if val <= 0:
             continue
         rows.append({
@@ -302,7 +303,7 @@ def build_week_context(end_date, days=7):
         totals = {}
         for e in day_entries:
             for k, v in e["nutrients"].items():
-                totals[k] = totals.get(k, 0) + (v or 0)
+                totals[k] = totals.get(k, 0) + db.safe_num(v)
         daily.append({"date": d, "totals": {k: round(v, 1) for k, v in totals.items()}})
 
     avg = {}
