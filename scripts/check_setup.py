@@ -62,8 +62,9 @@ def check_calorieninjas():
         "https://api.api-ninjas.com/v1/nutrition", params={"query": "1 apple"},
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY}, timeout=10,
     )
-    if r.ok and r.json().get("items"):
-        print(f"[{PASS}] CalorieNinjas -- parsed 'apple' -> {r.json()['items'][0].get('calories')} kcal")
+    data = r.json() if r.ok else None
+    if r.ok and isinstance(data, list) and data:
+        print(f"[{PASS}] CalorieNinjas -- parsed 'apple' -> {data[0].get('calories')} kcal")
     else:
         print(f"[{FAIL}] CalorieNinjas -- {r.status_code}: {r.text[:200]}")
 

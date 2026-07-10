@@ -72,10 +72,11 @@ def parse_calorieninjas(text):
         params={"query": text},
         headers={"X-Api-Key": config.CALORIENINJAS_API_KEY},
     )
-    if not data or "items" not in data:
+    # This endpoint returns a bare JSON array, not {"items": [...]}.
+    if not data or not isinstance(data, list):
         return []
     items = []
-    for it in data["items"]:
+    for it in data:
         items.append({
             "name": it.get("name", text),
             "kcal": it.get("calories"),
