@@ -65,7 +65,7 @@ is an internal reorganization, not a change to the public API.
 
 from core.gemini.body_comp_extraction import extract_body_comp_scan
 from core.gemini.body_comp_summary import generate_body_comp_summary
-from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _extract_json
+from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _extract_json, get_last_error
 from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
 from core.gemini.fill import fill_nutrition
@@ -90,6 +90,7 @@ __all__ = [
     "extract_body_comp_scan",
     "generate_body_comp_summary",
     "generate_lab_summary",
+    "get_last_error",
     "NUTRIENT_KEYS",
     "CORE_MACRO_KEYS",
 ]

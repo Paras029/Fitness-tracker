@@ -24,6 +24,23 @@ _DETAILED_BODY_COMP_FIELDS = (
     "body_fat_pct", "skeletal_muscle_kg", "visceral_fat", "bmr", "body_water_pct",
 )
 
+# Gemini's inline_data (base64-in-request) path tops out well under its
+# stated ~20MB request limit once JSON/base64 overhead is counted -- a
+# file past this is more reliably rejected outright than processed, so
+# it's caught here with a clear message *before* spending a request on a
+# call that's going to fail anyway (a 44-page scanned PDF can easily be
+# this large).
+_MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+
+
+def _too_large_error(file_bytes):
+    if file_bytes and len(file_bytes) > _MAX_UPLOAD_BYTES:
+        mb = len(file_bytes) / (1024 * 1024)
+        return (f"This file is {mb:.1f}MB, which is too large for Gemini to process in one request. "
+                 "Try a smaller/compressed scan, or split a long report into a few uploads (e.g. "
+                 "just the pages with results you want tracked).")
+    return None
+
 
 def _freshness(last_date, interval_days):
     if last_date is None:
@@ -109,12 +126,18 @@ def extract_lab_report(pdf_bytes=None, image_bytes=None, mime_type=None, caption
     caller reviews/edits the draft, then calls confirm_lab_report()."""
     from core import gemini
 
+    too_large = _too_large_error(pdf_bytes or image_bytes)
+    if too_large:
+        return {"tests": [], "error": too_large}
+
     extraction = gemini.extract_lab_results(
         pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type, caption=caption,
     )
     if extraction is None:
-        return {"tests": [], "error": "Couldn't parse this report -- check GEMINI_API_KEY / quota with "
-                                       "python -m scripts.check_setup, or try a clearer scan."}
+        detail = gemini.get_last_error()
+        return {"tests": [], "error": detail or
+                "Couldn't parse this report -- check GEMINI_API_KEY / quota with "
+                "python -m scripts.check_setup, or try a clearer scan."}
 
     categories = health_db.list_lab_categories()
     tests = []
@@ -186,12 +209,18 @@ def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None, cap
     the manual-entry path (log_body_comp), just pre-filled."""
     from core import gemini
 
+    too_large = _too_large_error(pdf_bytes or image_bytes)
+    if too_large:
+        return {"error": too_large}
+
     extraction = gemini.extract_body_comp_scan(
         pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type, caption=caption,
     )
     if extraction is None:
-        return {"error": "Couldn't parse this scan -- check GEMINI_API_KEY / quota with "
-                          "python -m scripts.check_setup, or try a clearer photo."}
+        detail = gemini.get_last_error()
+        return {"error": detail or
+                "Couldn't parse this scan -- check GEMINI_API_KEY / quota with "
+                "python -m scripts.check_setup, or try a clearer photo."}
     return extraction
 
 

@@ -21,6 +21,10 @@ import base64
 
 from core.gemini.client import call
 
+# A multi-page InBody printout takes longer than a single food photo --
+# see lab_extraction.py's matching constant for the same reasoning.
+_TIMEOUT_SECONDS = 60
+
 _INSTRUCTIONS = (
     "You are a body-composition scan extraction assistant (InBody-style printouts, "
     "smart scale app screenshots, or similar). Your ONLY job is reading the "
@@ -94,7 +98,7 @@ def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None, cap
         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode("ascii")}},
     ]
 
-    result = call(parts, response_schema=_RESPONSE_SCHEMA, max_output_tokens=1024)
+    result = call(parts, response_schema=_RESPONSE_SCHEMA, max_output_tokens=1024, timeout=_TIMEOUT_SECONDS)
     if not isinstance(result, dict):
         return None
     for key in ("weight_kg", "body_fat_pct", "skeletal_muscle_kg", "visceral_fat",

@@ -21,6 +21,17 @@ import base64
 
 from core.gemini.client import call
 
+# Long/scanned reports take Gemini noticeably longer to read than a
+# single-page food photo -- the client module's default 30s timeout was
+# tuned for that, not a multi-page PDF. See health_service.py for the
+# matching file-size preflight check (done there, before bytes get this
+# far, so it can give a specific error instead of a wasted request).
+_TIMEOUT_SECONDS = 100
+# A comprehensive panel (dozens of pages, 100+ discrete results) needs
+# more room than a typical extraction response -- 4096 tokens was cutting
+# large reports off mid-JSON.
+_MAX_OUTPUT_TOKENS = 8192
+
 _INSTRUCTIONS = (
     "You are a medical lab report extraction assistant. Your ONLY job is reading "
     "every individual test result off this report and structuring it -- never "
@@ -93,7 +104,8 @@ def extract_lab_results(pdf_bytes=None, image_bytes=None, mime_type=None, captio
         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode("ascii")}},
     ]
 
-    result = call(parts, response_schema=_RESPONSE_SCHEMA, max_output_tokens=4096)
+    result = call(parts, response_schema=_RESPONSE_SCHEMA,
+                  max_output_tokens=_MAX_OUTPUT_TOKENS, timeout=_TIMEOUT_SECONDS)
     if not isinstance(result, dict) or "tests" not in result:
         return None
     result.setdefault("report_date", None)
