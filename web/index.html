@@ -403,6 +403,42 @@
   .mc-save-meal{ font-size:11px; color:var(--ink-muted); background:transparent; border:none; cursor:pointer; padding:4px 6px; }
   .mc-save-meal:hover{ color:var(--ink); }
 
+  /* Workouts screen -- exercise cards mirror .meal-card, set rows mirror .mc-item */
+  .exercise-card{ border:1px solid var(--line); border-radius:9px; margin-bottom:8px; overflow:hidden; }
+  .exercise-head{ display:flex; align-items:center; gap:10px; padding:11px 13px; }
+  .exercise-name{ font-size:13.5px; font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .exercise-type-tag{
+    font-size:10px; text-transform:uppercase; letter-spacing:.04em; font-family:'IBM Plex Mono',monospace;
+    color:var(--ink-faint); border:1px solid var(--line-strong); border-radius:5px; padding:2px 6px; flex:none;
+  }
+  .exercise-total{ font-size:12.5px; color:var(--ink-muted); white-space:nowrap; flex:none; }
+  .exercise-del{ width:22px; height:22px; border:none; background:transparent; color:var(--ink-faint); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:none; }
+  .exercise-del:hover{ background:var(--paper-sunk); color:var(--critical); }
+  .exercise-del svg{ width:12px; height:12px; }
+  .exercise-body{ padding:0 13px 12px; border-top:1px solid var(--line); }
+  .set-row{ display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .set-row:last-of-type{ border-bottom:none; }
+  .set-num{ width:20px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; flex:none; }
+  .set-input{
+    width:64px; border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px; font-size:12px;
+    background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:right;
+  }
+  .set-unit{ font-size:11px; color:var(--ink-faint); margin-right:4px; }
+  .set-volume{ font-size:12px; color:var(--ink-muted); width:64px; text-align:right; flex:none; }
+  .set-del{ width:22px; height:22px; border:none; background:transparent; color:var(--ink-faint); border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:none; }
+  .set-del:hover{ background:var(--paper-sunk); color:var(--critical); }
+  .set-del svg{ width:12px; height:12px; }
+  .set-add-row{ margin-top:8px; }
+  .set-add-row button{ font-size:11.5px; padding:6px 10px; border-radius:6px; border:1px solid var(--line-strong); background:transparent; color:var(--ink-muted); cursor:pointer; }
+  .set-add-row button:hover{ color:var(--ink); border-color:var(--ink-faint); }
+  .pr-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .pr-row:last-child{ border-bottom:none; }
+  .pr-name{ font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pr-val{ color:var(--ink-muted); font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
+  .history-day{ margin-top:16px; }
+  .history-day:first-of-type{ margin-top:14px; }
+  .history-date{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:8px; }
+
   .insights-card{ padding:18px 20px; }
   .insight-body{ font-size:13px; line-height:1.6; color:var(--ink-muted); }
   .insight-body b{ color:var(--ink); }
@@ -773,11 +809,127 @@
           <div class="eyebrow">Nutrition Ledger</div>
           <h1>Workouts</h1>
         </div>
+        <div class="datenav">
+          <button class="arrow" id="wPrevDay" aria-label="Previous day">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="dateline" id="wDateTrigger" tabindex="0" role="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Choose a date">
+            <div class="day" id="wDateDay">--</div>
+            <div class="sub" id="wDateSub">--</div>
+          </div>
+          <div class="cal-pop" id="wCalPop" role="dialog" aria-label="Choose a date">
+            <div class="cal-head">
+              <button class="cal-nav" id="wCalPrevMonth" aria-label="Previous month" type="button">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg>
+              </button>
+              <div class="cal-month" id="wCalMonthLabel">--</div>
+              <button class="cal-nav" id="wCalNextMonth" aria-label="Next month" type="button">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6 6-6"/></svg>
+              </button>
+            </div>
+            <div class="cal-weekdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+            <div class="cal-grid" id="wCalGrid"></div>
+            <button class="cal-today-btn" id="wCalTodayBtn" type="button">Jump to today</button>
+          </div>
+          <button class="arrow" id="wNextDay" aria-label="Next day">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6 6-6"/></svg>
+          </button>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost" id="wJumpToday">Today</button>
+          <button class="btn btn-primary" id="wFocusQuickAdd">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Log exercise
+          </button>
+        </div>
       </div>
-      <div class="card screen-placeholder">
-        <svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 6.5 4 4M17.5 17.5 20 20M6.5 17.5 4 20M17.5 6.5 20 4"/><path d="M9 15 15 9"/><rect x="7.5" y="7.5" width="9" height="9" rx="2" transform="rotate(45 12 12)"/></svg>
-        <div class="empty-title">Workout tracking is coming soon</div>
-        <div class="empty-sub">Logged sessions, sets/reps, and progress over time will live here.</div>
+
+      <div class="hero-row">
+        <div class="card hero-card">
+          <div class="eyebrow">Volume</div>
+          <div class="ring-figs" style="margin-top:10px;">
+            <div class="kcal-left num" id="wVolumeToday">--</div>
+            <div class="kcal-goal">kg lifted this session</div>
+          </div>
+          <div class="mini-meals" id="wMiniStats"></div>
+        </div>
+
+        <div class="card hero-card">
+          <div class="eyebrow">Exercises today</div>
+          <div class="macro-list" id="wExerciseSummary">
+            <div class="empty-note">Nothing logged yet</div>
+          </div>
+        </div>
+
+        <div class="card hero-card streak-card">
+          <div class="eyebrow">Consistency</div>
+          <div class="streak-num"><span class="num" id="wStreakNum">--</span><span>day workout streak</span></div>
+          <div class="adherence">
+            <span>Workouts this week</span>
+            <b class="num" id="wWeekCount">--</b>
+          </div>
+          <div class="adherence" style="border-top:none; padding-top:0;">
+            <span>Sets today</span>
+            <b class="num" id="wSetCount">--</b>
+          </div>
+        </div>
+      </div>
+
+      <div class="body-grid">
+        <div class="stack">
+
+          <div class="card trend-card">
+            <div class="trend-head">
+              <div>
+                <h3 class="section-label">Volume trend</h3>
+                <div class="section-sub">Total kg lifted per day</div>
+              </div>
+              <div class="seg" id="wRangeSeg">
+                <button data-range="7" class="active">7D</button>
+                <button data-range="30">30D</button>
+              </div>
+            </div>
+            <div class="chart-wrap" id="wVolumeChartWrap">
+              <svg id="wVolumeChart" viewBox="0 0 720 220" preserveAspectRatio="none"></svg>
+              <div class="tooltip" id="wVolumeTooltip"></div>
+            </div>
+          </div>
+
+          <div class="card quickadd-card">
+            <h3 class="section-label">Log exercise</h3>
+            <div class="section-sub">Add a movement to today's session, then log its sets.</div>
+            <div class="quickadd-row">
+              <input type="text" id="wExerciseInput" list="wExerciseNames" placeholder="e.g. “Barbell bench press”" />
+              <select id="wExerciseType" class="mc-slot-pick" style="flex:none;">
+                <option value="strength" selected>Strength</option>
+                <option value="cardio">Cardio</option>
+              </select>
+              <button class="btn btn-primary" id="wAddExerciseBtn">Add</button>
+            </div>
+            <datalist id="wExerciseNames"></datalist>
+          </div>
+
+          <div class="card ledger-card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <h3 class="section-label">Today's session</h3>
+            </div>
+            <div id="wSession"></div>
+          </div>
+
+          <div class="card ledger-card">
+            <h3 class="section-label">History</h3>
+            <div id="wHistory"></div>
+          </div>
+
+        </div>
+
+        <div class="stack">
+          <div class="card insights-card">
+            <h3 class="section-label">Personal records</h3>
+            <div class="section-sub" style="margin-bottom:10px;">Best set ever logged, per exercise</div>
+            <div id="wRecords"></div>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -936,6 +1088,19 @@
     putProfile: function(body){ return fetch('/api/settings/profile', {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     savedMeals: function(){ return fetch('/api/saved-meals').then(r=>r.json()); },
     createSavedMeal: function(name, items){ return fetch('/api/saved-meals', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name, items:items})}).then(r=>r.json()); },
+
+    workoutsDay: function(date){ return fetch('/api/workouts/day/' + date).then(r=>r.json()); },
+    workoutsRange: function(days, end){ return fetch('/api/workouts/range?days=' + days + (end?'&end='+end:'')).then(r=>r.json()); },
+    workoutsTrends: function(days){ return fetch('/api/workouts/trends?days=' + days).then(r=>r.json()); },
+    exerciseNames: function(){ return fetch('/api/workouts/exercise-names').then(r=>r.json()); },
+    workoutRecords: function(){ return fetch('/api/workouts/records').then(r=>r.json()); },
+    createWorkout: function(date){ return fetch('/api/workouts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date:date})}).then(r=>r.json()); },
+    deleteWorkout: function(workoutId){ return fetch('/api/workouts/' + workoutId, {method:'DELETE'}).then(r=>r.json()); },
+    addExercise: function(workoutId, name, exerciseType){ return fetch('/api/workouts/' + workoutId + '/exercises', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name:name, exercise_type:exerciseType})}).then(r=>r.json()); },
+    deleteExercise: function(exerciseId){ return fetch('/api/workouts/exercises/' + exerciseId, {method:'DELETE'}).then(r=>r.json()); },
+    addSet: function(exerciseId, body){ return fetch('/api/workouts/exercises/' + exerciseId + '/sets', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    updateSet: function(setId, body){ return fetch('/api/workouts/sets/' + setId, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteSet: function(setId){ return fetch('/api/workouts/sets/' + setId, {method:'DELETE'}).then(r=>r.json()); },
   };
 
   var MACRO_COLOR = {protein:'var(--protein)', carbs:'var(--carbs)', fat:'var(--fat)', fiber:'var(--fiber)'};
@@ -1982,6 +2147,427 @@
     });
   });
 
+  // ---------------- workouts screen ----------------
+
+  var TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>';
+  var wState = { date: todayISO(), rangeDays: 7 };
+
+  function wFmtKg(n){ return (Math.round((n||0)*10)/10).toLocaleString('en-US'); }
+
+  function loadWorkoutDay(date){
+    wState.date = date;
+    document.getElementById('wDateDay').textContent = dayLabel(date) + (date === todayISO() ? ' · Today' : '');
+    document.getElementById('wDateSub').textContent = date.toUpperCase();
+    document.getElementById('wNextDay').disabled = false;
+    api.workoutsDay(date).then(function(data){
+      renderWorkoutHero(data.workouts || []);
+      renderWorkoutSession(data.workouts || []);
+    });
+    if(wCalState.loadedDates) renderWorkoutCalendarGrid();
+    loadWorkoutHistory();
+  }
+
+  function renderWorkoutHero(workouts){
+    var totalVolume = 0, totalSets = 0, exerciseCount = 0, totalDurationMin = 0;
+    var allExercises = [];
+    workouts.forEach(function(w){
+      totalVolume += w.total_volume_kg; totalSets += w.total_sets; totalDurationMin += w.total_duration_min;
+      exerciseCount += w.exercises.length;
+      allExercises = allExercises.concat(w.exercises);
+    });
+    document.getElementById('wVolumeToday').textContent = wFmtKg(totalVolume);
+    document.getElementById('wSetCount').textContent = totalSets;
+
+    var mini = document.getElementById('wMiniStats');
+    if(!workouts.length){
+      mini.innerHTML = '<span class="mini-meal">Nothing logged yet</span>';
+    } else {
+      mini.innerHTML = '<span class="mini-meal">Exercises <span class="num">' + exerciseCount + '</span></span>' +
+        (totalDurationMin > 0 ? '<span class="mini-meal">Cardio <span class="num">' + Math.round(totalDurationMin) + '</span> min</span>' : '');
+    }
+
+    var es = document.getElementById('wExerciseSummary');
+    if(!allExercises.length){
+      es.innerHTML = '<div class="empty-note">Nothing logged yet</div>';
+    } else {
+      var maxVol = Math.max.apply(null, allExercises.map(function(e){ return e.total_volume_kg; }).concat([1]));
+      es.innerHTML = allExercises.map(function(ex){
+        var isStrength = ex.exercise_type === 'strength';
+        var pct = isStrength ? (maxVol ? Math.min(ex.total_volume_kg / maxVol, 1) * 100 : 0) : 100;
+        var valText = isStrength
+          ? Math.round(ex.total_volume_kg) + 'kg'
+          : (ex.total_duration_min > 0 ? Math.round(ex.total_duration_min) + 'min' : Math.round(ex.total_distance_km*100)/100 + 'km');
+        return '<div class="macro-row" style="cursor:default;">' +
+          '<div class="macro-name"><span class="sw" style="background:var(--accent)"></span>' + ex.name + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%; background:var(--accent)"></div></div>' +
+          '<div class="macro-val num"><b>' + valText + '</b></div>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  function renderWorkoutSession(workouts){
+    var container = document.getElementById('wSession');
+    container.innerHTML = '';
+    if(!workouts.length){
+      var isToday = wState.date === todayISO();
+      container.innerHTML =
+        '<div class="empty-state">' +
+          '<svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 6.5 4 4M17.5 17.5 20 20M6.5 17.5 4 20M17.5 6.5 20 4"/><path d="M9 15 15 9"/><rect x="7.5" y="7.5" width="9" height="9" rx="2" transform="rotate(45 12 12)"/></svg>' +
+          '<div class="empty-title">' + (isToday ? 'Nothing logged yet today' : 'Nothing logged this day') + '</div>' +
+          '<div class="empty-sub">Add an exercise above to start this session.</div>' +
+        '</div>';
+      return;
+    }
+    workouts.forEach(function(w){
+      w.exercises.forEach(function(ex){ container.appendChild(renderExerciseCard(ex)); });
+    });
+    if(workouts.length === 1){
+      var del = document.createElement('div');
+      del.style.textAlign = 'right'; del.style.marginTop = '6px';
+      del.innerHTML = '<button class="mc-delete-meal">Delete whole session</button>';
+      del.querySelector('button').addEventListener('click', function(){
+        api.deleteWorkout(workouts[0].id).then(function(){
+          toast('Session deleted.');
+          loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak();
+        });
+      });
+      container.appendChild(del);
+    }
+  }
+
+  function renderExerciseCard(ex){
+    var card = document.createElement('div');
+    card.className = 'exercise-card';
+    var isStrength = ex.exercise_type === 'strength';
+    var totalText = isStrength
+      ? Math.round(ex.total_volume_kg) + ' kg total'
+      : [ex.total_duration_min > 0 ? Math.round(ex.total_duration_min) + ' min' : '', ex.total_distance_km > 0 ? ex.total_distance_km + ' km' : '']
+          .filter(Boolean).join(' · ');
+    card.innerHTML =
+      '<div class="exercise-head">' +
+        '<span class="exercise-name">' + ex.name + '</span>' +
+        '<span class="exercise-type-tag">' + ex.exercise_type + '</span>' +
+        '<span class="exercise-total num">' + totalText + '</span>' +
+        '<button class="exercise-del" aria-label="Remove exercise">' + TRASH_SVG + '</button>' +
+      '</div>' +
+      '<div class="exercise-body"></div>';
+    var body = card.querySelector('.exercise-body');
+    ex.sets.forEach(function(s, i){ body.appendChild(renderSetRow(s, ex, i)); });
+    var addRow = document.createElement('div');
+    addRow.className = 'set-add-row';
+    addRow.innerHTML = '<button type="button">+ Add set</button>';
+    addRow.querySelector('button').addEventListener('click', function(){
+      var last = ex.sets[ex.sets.length - 1];
+      var body_ = isStrength
+        ? {reps: last ? last.reps : 8, weight_kg: last ? last.weight_kg : 0}
+        : {duration_sec: last ? last.duration_sec : 60, distance_km: last ? last.distance_km : null};
+      api.addSet(ex.id, body_).then(function(){
+        loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak();
+      });
+    });
+    body.appendChild(addRow);
+    card.querySelector('.exercise-del').addEventListener('click', function(){
+      api.deleteExercise(ex.id).then(function(){
+        toast('Exercise removed.');
+        loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak();
+      });
+    });
+    return card;
+  }
+
+  function renderSetRow(s, ex, idx){
+    var row = document.createElement('div');
+    row.className = 'set-row';
+    if(ex.exercise_type === 'strength'){
+      row.innerHTML =
+        '<span class="set-num">' + (idx+1) + '</span>' +
+        '<input type="number" class="set-input" data-field="reps" value="' + (s.reps!=null?s.reps:'') + '" placeholder="reps">' +
+        '<span class="set-unit">reps</span>' +
+        '<input type="number" class="set-input" data-field="weight_kg" value="' + (s.weight_kg!=null?s.weight_kg:'') + '" placeholder="kg">' +
+        '<span class="set-unit">kg</span>' +
+        '<span class="set-volume num">' + wFmtKg(s.volume_kg) + ' kg</span>' +
+        '<button class="set-del" aria-label="Remove set">' + TRASH_SVG + '</button>';
+    } else {
+      row.innerHTML =
+        '<span class="set-num">' + (idx+1) + '</span>' +
+        '<input type="number" class="set-input" data-field="duration_sec" value="' + (s.duration_sec!=null?s.duration_sec:'') + '" placeholder="sec">' +
+        '<span class="set-unit">sec</span>' +
+        '<input type="number" class="set-input" data-field="distance_km" step="0.01" value="' + (s.distance_km!=null?s.distance_km:'') + '" placeholder="km">' +
+        '<span class="set-unit">km</span>' +
+        '<span class="set-volume"></span>' +
+        '<button class="set-del" aria-label="Remove set">' + TRASH_SVG + '</button>';
+    }
+    row.querySelectorAll('.set-input').forEach(function(input){
+      var commit = function(){
+        var field = input.dataset.field;
+        var val = input.value === '' ? null : parseFloat(input.value);
+        var body = {}; body[field] = val;
+        api.updateSet(s.id, body).then(function(){ loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); });
+      };
+      input.addEventListener('change', commit);
+      input.addEventListener('keydown', function(e){ if(e.key==='Enter') input.blur(); });
+    });
+    row.querySelector('.set-del').addEventListener('click', function(){
+      api.deleteSet(s.id).then(function(){
+        toast('Set removed.');
+        loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak();
+      });
+    });
+    return row;
+  }
+
+  function addExerciseFlow(){
+    var nameInput = document.getElementById('wExerciseInput');
+    var name = nameInput.value.trim();
+    if(!name){ toast('Enter an exercise name.'); return; }
+    var type = document.getElementById('wExerciseType').value;
+    api.workoutsDay(wState.date).then(function(data){
+      var workouts = data.workouts || [];
+      var ensure = workouts.length ? Promise.resolve(workouts[0]) : api.createWorkout(wState.date).then(function(r){ return r.workout; });
+      ensure.then(function(workout){
+        api.addExercise(workout.id, name, type).then(function(){
+          nameInput.value = '';
+          toast(name + ' added.');
+          loadWorkoutDay(wState.date); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak(); loadExerciseNames();
+        });
+      });
+    });
+  }
+  document.getElementById('wAddExerciseBtn').addEventListener('click', addExerciseFlow);
+  document.getElementById('wExerciseInput').addEventListener('keydown', function(e){ if(e.key==='Enter') addExerciseFlow(); });
+  document.getElementById('wFocusQuickAdd').addEventListener('click', function(){ document.getElementById('wExerciseInput').focus(); });
+
+  function loadExerciseNames(){
+    api.exerciseNames().then(function(names){
+      document.getElementById('wExerciseNames').innerHTML = names.map(function(n){
+        return '<option value="' + n.replace(/"/g,'&quot;') + '">';
+      }).join('');
+    });
+  }
+
+  function loadWorkoutRecords(){
+    api.workoutRecords().then(function(records){
+      var el = document.getElementById('wRecords');
+      if(!records.length){ el.innerHTML = '<div class="empty-note">Log a strength set to see PRs here.</div>'; return; }
+      el.innerHTML = records.map(function(r){
+        return '<div class="pr-row"><span class="pr-name">' + r.name + '</span><span class="pr-val num">' + wFmtKg(r.weight_kg) + 'kg × ' + r.reps + '</span></div>';
+      }).join('');
+    });
+  }
+
+  function renderHistoryWorkout(w){
+    var card = document.createElement('div');
+    card.className = 'meal-card';
+    var head = document.createElement('div');
+    head.className = 'meal-card-head';
+    head.innerHTML =
+      '<span class="mc-chevron">▸</span>' +
+      '<span class="mc-label">' + w.name + '</span>' +
+      '<span class="mc-macros num">' + w.total_sets + ' sets</span>' +
+      '<span class="mc-kcal num">' + Math.round(w.total_volume_kg) + ' kg</span>';
+    var body = document.createElement('div');
+    body.className = 'meal-card-body';
+    var bodyHtml = '';
+    w.exercises.forEach(function(ex){
+      var setsText = ex.sets.map(function(s){
+        return ex.exercise_type === 'strength'
+          ? (s.reps||0) + '×' + (s.weight_kg||0) + 'kg'
+          : Math.round((s.duration_sec||0)/6)/10 + 'min' + (s.distance_km ? ' / ' + s.distance_km + 'km' : '');
+      }).join(', ');
+      bodyHtml += '<div class="mc-item"><span class="mc-item-name">' + ex.name + '</span>' +
+        '<span class="mc-item-kcal num" style="width:auto;">' + setsText + '</span></div>';
+    });
+    bodyHtml += '<div class="mc-footer" style="justify-content:flex-end;"><button class="mc-delete-meal">Delete session</button></div>';
+    body.innerHTML = bodyHtml;
+    head.addEventListener('click', function(){ card.classList.toggle('open'); });
+    card.appendChild(head); card.appendChild(body);
+    body.querySelector('.mc-delete-meal').addEventListener('click', function(e){
+      e.stopPropagation();
+      api.deleteWorkout(w.id).then(function(){
+        toast('Session deleted.');
+        loadWorkoutHistory(); loadWorkoutTrends(wState.rangeDays); loadWorkoutStreak();
+      });
+    });
+    return card;
+  }
+
+  function loadWorkoutHistory(){
+    api.workoutsRange(30).then(function(data){
+      var el = document.getElementById('wHistory');
+      var groups = {};
+      (data.workouts || []).filter(function(w){ return w.log_date !== wState.date; }).forEach(function(w){
+        (groups[w.log_date] = groups[w.log_date] || []).push(w);
+      });
+      var dates = Object.keys(groups).sort().reverse();
+      if(!dates.length){ el.innerHTML = '<div class="empty-note">Nothing else logged in the last 30 days.</div>'; return; }
+      el.innerHTML = '';
+      dates.forEach(function(date){
+        var section = document.createElement('div');
+        section.className = 'history-day';
+        var totalVol = groups[date].reduce(function(a,w){ return a + w.total_volume_kg; }, 0);
+        section.innerHTML = '<div class="history-date">' + date + ' &middot; <span class="num">' + Math.round(totalVol) + ' kg</span></div>';
+        groups[date].forEach(function(w){ section.appendChild(renderHistoryWorkout(w)); });
+        el.appendChild(section);
+      });
+    });
+  }
+
+  function loadWorkoutStreak(){
+    api.workoutsTrends(60).then(function(data){
+      var series = data.series;
+      var streak = 0;
+      for(var i = series.length - 1; i >= 0; i--){
+        var logged = series[i].workouts > 0;
+        if(!logged){
+          if(series[i].date === todayISO()) continue;
+          break;
+        }
+        streak++;
+      }
+      document.getElementById('wStreakNum').textContent = streak;
+      var weekCount = series.slice(-7).filter(function(d){ return d.workouts > 0; }).length;
+      document.getElementById('wWeekCount').textContent = weekCount;
+    });
+  }
+
+  var W_W=720, W_H=220, W_PAD_L=44, W_PAD_R=10, W_PAD_T=14, W_PAD_B=26;
+  function drawWorkoutVolumeChart(series){
+    var svg = document.getElementById('wVolumeChart');
+    var vals = series.map(function(d){ return d.v; });
+    var max = Math.max.apply(null, vals.concat([1])) * 1.15;
+    var innerW = W_W-W_PAD_L-W_PAD_R, innerH = W_H-W_PAD_T-W_PAD_B;
+    function X(i){ return W_PAD_L + (series.length<=1?0:i/(series.length-1))*innerW; }
+    function Y(v){ return W_PAD_T + innerH - (v/(max||1))*innerH; }
+    var pts = series.map(function(d,i){ return [X(i), Y(d.v)]; });
+    var linePath = pts.map(function(p,i){ return (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
+    var areaPath = linePath + ' L'+pts[pts.length-1][0].toFixed(1)+','+(W_PAD_T+innerH)+' L'+pts[0][0].toFixed(1)+','+(W_PAD_T+innerH)+' Z';
+    var gridLines = '';
+    for(var s=0;s<=4;s++){
+      var gy = W_PAD_T + (innerH/4)*s;
+      gridLines += '<line x1="'+W_PAD_L+'" y1="'+gy+'" x2="'+(W_W-W_PAD_R)+'" y2="'+gy+'" stroke="var(--line)" stroke-width="1"/>';
+      var gv = Math.round(max - max*(s/4));
+      gridLines += '<text x="'+(W_PAD_L-8)+'" y="'+(gy+3)+'" text-anchor="end" font-size="9.5" fill="var(--ink-faint)" font-family="IBM Plex Mono, monospace">'+gv+'</text>';
+    }
+    var shownIdx = xLabelIndices(series.length);
+    var xLabels = shownIdx.map(function(i){
+      return '<text x="'+X(i)+'" y="'+(W_H-6)+'" text-anchor="middle" font-size="9.5" fill="var(--ink-faint)" font-family="IBM Plex Mono, monospace">'+series[i].d.slice(5)+'</text>';
+    }).join('');
+    var dots = pts.map(function(p){ return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="var(--paper-raised)" stroke="var(--accent)" stroke-width="2"/>'; }).join('');
+    svg.innerHTML = gridLines +
+      '<path d="'+areaPath+'" fill="var(--accent)" opacity="0.12" stroke="none"/>' +
+      '<path d="'+linePath+'" fill="none" stroke="var(--accent)" stroke-width="2"/>' + dots + xLabels +
+      '<rect id="wVolumeHitLayer" x="'+W_PAD_L+'" y="0" width="'+innerW+'" height="'+W_H+'" fill="transparent"/>';
+    svg.setAttribute('viewBox','0 0 '+W_W+' '+W_H);
+    var hit = document.getElementById('wVolumeHitLayer');
+    var tip = document.getElementById('wVolumeTooltip');
+    var wrap = document.getElementById('wVolumeChartWrap');
+    hit.addEventListener('mousemove', function(e){
+      var rect = svg.getBoundingClientRect();
+      var mx = (e.clientX-rect.left)*(W_W/rect.width);
+      var i = Math.max(0, Math.min(series.length-1, Math.round((mx-W_PAD_L)/innerW*(series.length-1))));
+      var p = pts[i]; var wrapRect = wrap.getBoundingClientRect(); var scale = wrapRect.width/W_W;
+      tip.style.left = (p[0]*scale)+'px'; tip.style.top = (p[1]*scale-54)+'px';
+      tip.innerHTML = '<div class="t-title">'+series[i].d+'</div>'+Math.round(series[i].v).toLocaleString('en-US')+' kg';
+      tip.classList.add('show');
+    });
+    hit.addEventListener('mouseleave', function(){ tip.classList.remove('show'); });
+  }
+
+  function loadWorkoutTrends(days){
+    api.workoutsTrends(days).then(function(data){
+      var series = data.series.map(function(d){ return {d:d.date, v:d.volume_kg}; });
+      drawWorkoutVolumeChart(series);
+    });
+  }
+
+  document.getElementById('wRangeSeg').addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if(!btn) return;
+    this.querySelectorAll('button').forEach(function(b){ b.classList.remove('active'); });
+    btn.classList.add('active');
+    wState.rangeDays = parseInt(btn.dataset.range, 10);
+    loadWorkoutTrends(wState.rangeDays);
+  });
+
+  // ---------------- workouts date picker (mirrors the nutrition one, own state/ids) ----------------
+
+  var wCalState = { viewYear: null, viewMonth: null, dataDates: {}, loadedDates: false };
+  var wDateTrigger = document.getElementById('wDateTrigger');
+  var wCalPop = document.getElementById('wCalPop');
+
+  function isWCalOpen(){ return wCalPop.classList.contains('show'); }
+  function openWCalendar(){
+    var d = new Date(wState.date + 'T00:00:00');
+    wCalState.viewYear = d.getFullYear(); wCalState.viewMonth = d.getMonth();
+    renderWorkoutCalendarGrid();
+    wCalPop.classList.add('show'); wDateTrigger.classList.add('open'); wDateTrigger.setAttribute('aria-expanded', 'true');
+    if(!wCalState.loadedDates) loadWorkoutCalendarData();
+  }
+  function closeWCalendar(){
+    wCalPop.classList.remove('show'); wDateTrigger.classList.remove('open'); wDateTrigger.setAttribute('aria-expanded', 'false');
+  }
+  function toggleWCalendar(){ isWCalOpen() ? closeWCalendar() : openWCalendar(); }
+  wDateTrigger.addEventListener('click', toggleWCalendar);
+  wDateTrigger.addEventListener('keydown', function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggleWCalendar(); } });
+  document.addEventListener('click', function(e){
+    if(isWCalOpen() && !wCalPop.contains(e.target) && !wDateTrigger.contains(e.target)) closeWCalendar();
+  });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape' && isWCalOpen()) closeWCalendar(); });
+
+  function loadWorkoutCalendarData(){
+    api.workoutsTrends(180).then(function(data){
+      wCalState.dataDates = {};
+      data.series.forEach(function(d){ if(d.workouts > 0) wCalState.dataDates[d.date] = true; });
+      wCalState.loadedDates = true;
+      renderWorkoutCalendarGrid();
+    });
+  }
+
+  document.getElementById('wCalPrevMonth').addEventListener('click', function(){
+    wCalState.viewMonth--; if(wCalState.viewMonth < 0){ wCalState.viewMonth = 11; wCalState.viewYear--; }
+    renderWorkoutCalendarGrid();
+  });
+  document.getElementById('wCalNextMonth').addEventListener('click', function(){
+    wCalState.viewMonth++; if(wCalState.viewMonth > 11){ wCalState.viewMonth = 0; wCalState.viewYear++; }
+    renderWorkoutCalendarGrid();
+  });
+  document.getElementById('wCalTodayBtn').addEventListener('click', function(){
+    loadWorkoutDay(todayISO());
+    var d = new Date(); wCalState.viewYear = d.getFullYear(); wCalState.viewMonth = d.getMonth();
+    renderWorkoutCalendarGrid(); closeWCalendar();
+  });
+
+  function renderWorkoutCalendarGrid(){
+    var y = wCalState.viewYear, m = wCalState.viewMonth;
+    if(y == null) return;
+    document.getElementById('wCalMonthLabel').textContent = new Date(y, m, 1).toLocaleDateString('en-US', {month:'long', year:'numeric'});
+    var firstDow = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m+1, 0).getDate();
+    var daysInPrevMonth = new Date(y, m, 0).getDate();
+    var cells = [];
+    for(var i = firstDow - 1; i >= 0; i--) cells.push({day: daysInPrevMonth - i, out: true});
+    for(var day = 1; day <= daysInMonth; day++) cells.push({day: day, out: false, iso: y + '-' + pad2(m+1) + '-' + pad2(day)});
+    var next = 1;
+    while(cells.length % 7 !== 0){ cells.push({day: next++, out: true}); }
+    var today = todayISO();
+    var grid = document.getElementById('wCalGrid');
+    grid.innerHTML = cells.map(function(c){
+      if(c.out) return '<div class="cal-cell out">' + c.day + '</div>';
+      var cls = 'cal-cell';
+      if(c.iso === wState.date) cls += ' selected';
+      if(c.iso === today) cls += ' today';
+      var dot = wCalState.dataDates[c.iso] ? '<span class="cal-dot"></span>' : '';
+      return '<button type="button" class="' + cls + '" data-date="' + c.iso + '" aria-label="' + c.iso + '">' + c.day + dot + '</button>';
+    }).join('');
+    grid.querySelectorAll('.cal-cell:not(.out)').forEach(function(btn){
+      btn.addEventListener('click', function(){ loadWorkoutDay(btn.dataset.date); closeWCalendar(); });
+    });
+  }
+
+  document.getElementById('wPrevDay').addEventListener('click', function(){ loadWorkoutDay(shiftDate(wState.date, -1)); });
+  document.getElementById('wNextDay').addEventListener('click', function(){ loadWorkoutDay(shiftDate(wState.date, 1)); });
+  document.getElementById('wJumpToday').addEventListener('click', function(){ loadWorkoutDay(todayISO()); });
+
   // ---------------- boot ----------------
   document.getElementById('exportLink').href = '/api/export?format=csv';
   loadDay(state.date);
@@ -1989,6 +2575,12 @@
   loadTrends(state.rangeDays);
   loadStreak();
   loadSavedMeals();
+
+  loadWorkoutDay(wState.date);
+  loadWorkoutTrends(wState.rangeDays);
+  loadWorkoutStreak();
+  loadExerciseNames();
+  loadWorkoutRecords();
 
   // One-time entrance on first paint only -- date nav / edits never
   // replay this, since re-animating the whole page on every interaction

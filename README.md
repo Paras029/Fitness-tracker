@@ -111,69 +111,64 @@ else that aggregates across days, if you add more.
   call too, not just displayed).
 - Multi-screen shell (`app-shell` / `.screen` / `showScreen()` in
   `web/index.html`): sidebar has 3 nav items (Nutrition, Health, Workouts).
-  Nutrition is fully built. Health and Workouts are placeholder screens --
+  Nutrition and Workouts are fully built. Health is still a placeholder --
   see Roadmap below.
+- Workouts screen: session-based strength/cardio logging (`workouts` ->
+  `workout_exercises` -> `workout_sets` in `core/db.py`, pure CRUD/
+  aggregation, no Gemini involved). Volume (`reps * weight_kg`) and cardio
+  duration/distance are always computed on read from raw sets, same
+  never-store-a-derived-value convention as meal nutrients. Deleting the
+  last set of an exercise (or last exercise of a session) cascades cleanly
+  so the log never accumulates empty rows. UI: date-scoped session view
+  (own date nav/calendar, mirroring the nutrition one), quick-add with a
+  strength/cardio toggle and an exercise-name datalist for repeat lifts,
+  volume trend chart, day/workout streak, a personal-records board (best
+  set ever logged per exercise), and a read-only history list for other
+  days. Endpoints live under `/api/workouts/*` in `backend/api_server.py`.
 
-## Roadmap: Health/BCA + Workouts screens
+## Roadmap: Health/BCA screen
 
 The user's stated goal is a complete fitness tracker: nutrition (done),
-**medical results / body composition (BCA) / water tracking** (new screen),
-and **workouts** (new screen), all interlinked in one UI.
+workouts (done), and **medical results / body composition (BCA) / water
+tracking** (new screen), all interlinked in one UI.
 
 ### What's already scaffolded
 
-- `web/index.html`: `#screen-health` and `#screen-workouts` containers exist
-  as siblings of `#screen-nutrition` inside `<main>`, toggled by
+- `web/index.html`: `#screen-health` exists as a sibling of
+  `#screen-nutrition` / `#screen-workouts` inside `<main>`, toggled by
   `showScreen(name)` (pure client-side visibility, no routing/reload --
-  in-memory state on one screen survives a trip to another and back). Each
+  in-memory state on one screen survives a trip to another and back). The
   placeholder gets its own one-time entrance animation on first visit
-  (`animatedScreens` cache in the boot script). Nav items carry
-  `data-screen="health"` / `data-screen="workouts"` attributes; wiring a new
-  screen is: give it a `#screen-<name>` container, don't need to touch
-  `showScreen()` itself.
-- Sidebar nav SVG icons for both new sections are already in place (a
-  heartbeat icon for Health, a dumbbell-ish icon for Workouts) --
-  reuse/restyle if the actual content ends up wanting different iconography.
+  (`animatedScreens` cache in the boot script). The nav item carries a
+  `data-screen="health"` attribute; wiring it up is: give it content inside
+  `#screen-health`, don't need to touch `showScreen()` itself.
+- The sidebar nav SVG icon for Health (a heartbeat icon) is already in
+  place -- reuse/restyle if the actual content ends up wanting different
+  iconography.
+- The Workouts screen (`core/db.py`'s workouts/workout_exercises/
+  workout_sets section, the `/api/workouts/*` routes, and the
+  `#screen-workouts` markup/JS in `web/index.html`) is a concrete, recent
+  example of taking a screen from placeholder to fully built within this
+  same file layout -- worth skimming as a template for Health's own
+  data model + endpoints + screen.
 
 ### What's not started (by design -- out of scope for this session)
 
 - **Data model**: no schema for medical results, body composition (BCA),
-  water intake beyond the bot's existing crude `/water` command (logs into
-  the same `meals` table under a `"water"` meal_slot with an ad hoc
+  or water intake beyond the bot's existing crude `/water` command (logs
+  into the `meals` table under a `"water"` meal_slot with an ad hoc
   `water_ml` nutrient key -- probably wrong once there's a real Health
-  screen; likely wants its own table(s)), or workouts (exercises, sets,
-  reps, duration, whatever "workout" means for this user -- needs
-  clarifying).
+  screen; likely wants its own table(s)).
 - **Backend endpoints** for whatever that schema ends up being.
-- **Actual screen UI** -- the placeholders are literally just an icon +
-  text.
+- **Actual screen UI** -- the placeholder is literally just an icon + text.
 - **Cross-screen interlinking** the user asked for (e.g. does a workout
   affect calorie targets on the Nutrition screen? does a BCA weigh-in update
   the `bodyweight_kg` profile value that `per_kg_bodyweight` nutrient targets
   already key off?) -- this needs product decisions, not just engineering,
   before it can be built.
 
-### Recommended session strategy
-
-The user asked directly whether to use a separate Claude Code chat for this
-next phase. **Yes, start a new session for it.** Reasons:
-
-1. This nutrition-tracking build has accumulated a lot of context (pipeline
-   design, quota-consciousness, the editorial design system, the tracking-
-   tier logic) that a fresh session doesn't need to re-derive to work on
-   BCA/workout screens -- those are close to a clean-slate feature area.
-2. It keeps the two concerns independently iterable: if the user wants a
-   nutrition-side tweak later, they can come back to a session that still
-   has full nutrition context without it being buried under unrelated
-   workout-screen back-and-forth (and vice versa).
-3. This file is the handoff: point the new session at this README first.
-   The architecture section + pipeline description + "what's already
-   scaffolded" above should be enough for it to orient without replaying
-   this session's history.
-
-Before starting that session, it's worth the user deciding (or the new
+Before starting on Health, it's worth the user deciding (or the next
 session asking up front): what specifically goes on the Health screen
 (which medical results? what does "BCA" mean here precisely -- a specific
-device/report format to parse, or manual entry?) and what "workouts" means
-for this user (which sport/style, what fields matter -- these shape the
-schema a lot and are worth pinning down before writing code).
+device/report format to parse, or manual entry?) -- that shapes the schema
+a lot and is worth pinning down before writing code.

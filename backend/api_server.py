@@ -354,6 +354,147 @@ def ask():
     return jsonify({"answer": answer})
 
 
+# ---------------- workouts ----------------
+# Pure CRUD + deterministic aggregation, no Gemini involved -- unlike
+# meals there's no free-text parsing step, so this talks to db.py directly
+# rather than through logging_service.
+
+@app.route("/api/workouts/day/<date>")
+def workouts_day(date):
+    return jsonify({"date": date, "workouts": db.get_day_workouts(date)})
+
+
+@app.route("/api/workouts/range")
+def workouts_range():
+    end = request.args.get("end") or db.today_str()
+    days = int(request.args.get("days", 14))
+    end_dt = datetime.strptime(end, "%Y-%m-%d")
+    start_dt = end_dt - timedelta(days=days - 1)
+    workouts = db.get_range_workouts(start_dt.strftime("%Y-%m-%d"), end)
+    return jsonify({"start": start_dt.strftime("%Y-%m-%d"), "end": end, "workouts": workouts})
+
+
+@app.route("/api/workouts/trends")
+def workouts_trends():
+    end = request.args.get("end") or db.today_str()
+    days = int(request.args.get("days", 7))
+    end_dt = datetime.strptime(end, "%Y-%m-%d")
+    start_dt = end_dt - timedelta(days=days - 1)
+    workouts = db.get_range_workouts(start_dt.strftime("%Y-%m-%d"), end)
+
+    by_date = {}
+    for w in workouts:
+        d = by_date.setdefault(w["log_date"], {"volume_kg": 0, "sets": 0, "duration_min": 0, "workouts": 0})
+        d["volume_kg"] += w["total_volume_kg"]
+        d["sets"] += w["total_sets"]
+        d["duration_min"] += w["total_duration_min"]
+        d["workouts"] += 1
+
+    series = []
+    for i in range(days):
+        d = (start_dt + timedelta(days=i)).strftime("%Y-%m-%d")
+        totals = by_date.get(d, {})
+        series.append({
+            "date": d,
+            "volume_kg": round(totals.get("volume_kg", 0), 1),
+            "sets": totals.get("sets", 0),
+            "duration_min": round(totals.get("duration_min", 0), 1),
+            "workouts": totals.get("workouts", 0),
+        })
+
+    return jsonify({"start": start_dt.strftime("%Y-%m-%d"), "end": end, "series": series})
+
+
+@app.route("/api/workouts/exercise-names")
+def workouts_exercise_names():
+    return jsonify(db.list_exercise_names())
+
+
+@app.route("/api/workouts/records")
+def workouts_records():
+    return jsonify(db.personal_records())
+
+
+@app.route("/api/workouts", methods=["POST"])
+def create_workout():
+    body = request.get_json(force=True)
+    workout = db.create_workout(name=body.get("name"), log_date=body.get("date"), notes=body.get("notes"))
+    return jsonify({"workout": workout})
+
+
+@app.route("/api/workouts/<int:workout_id>", methods=["PUT"])
+def edit_workout(workout_id):
+    body = request.get_json(force=True)
+    db.update_workout(workout_id, name=body.get("name"), notes=body.get("notes"))
+    workout = db.get_workout(workout_id)
+    if workout is None:
+        return jsonify({"error": "workout not found"}), 404
+    return jsonify({"workout": workout})
+
+
+@app.route("/api/workouts/<int:workout_id>", methods=["DELETE"])
+def remove_workout(workout_id):
+    db.delete_workout(workout_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/workouts/<int:workout_id>/exercises", methods=["POST"])
+def add_exercise(workout_id):
+    body = request.get_json(force=True)
+    try:
+        db.add_exercise(workout_id, body["name"], exercise_type=body.get("exercise_type", "strength"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    workout = db.get_workout(workout_id)
+    if workout is None:
+        return jsonify({"error": "workout not found"}), 404
+    return jsonify({"workout": workout})
+
+
+@app.route("/api/workouts/exercises/<int:exercise_id>", methods=["DELETE"])
+def remove_exercise(exercise_id):
+    workout_id = db.delete_exercise(exercise_id)
+    workout = db.get_workout(workout_id) if workout_id else None
+    return jsonify({"ok": True, "workout": workout, "workout_deleted": workout is None})
+
+
+@app.route("/api/workouts/exercises/<int:exercise_id>/sets", methods=["POST"])
+def add_set(exercise_id):
+    body = request.get_json(force=True)
+    db.add_set(
+        exercise_id, reps=body.get("reps"), weight_kg=body.get("weight_kg"),
+        duration_sec=body.get("duration_sec"), distance_km=body.get("distance_km"),
+    )
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT workout_id FROM workout_exercises WHERE id=?", (exercise_id,)).fetchone()
+    workout = db.get_workout(row["workout_id"]) if row else None
+    if workout is None:
+        return jsonify({"error": "exercise not found"}), 404
+    return jsonify({"workout": workout})
+
+
+@app.route("/api/workouts/sets/<int:set_id>", methods=["PUT"])
+def edit_set(set_id):
+    body = request.get_json(force=True)
+    exercise_id = db.update_set(
+        set_id, reps=body.get("reps"), weight_kg=body.get("weight_kg"),
+        duration_sec=body.get("duration_sec"), distance_km=body.get("distance_km"),
+    )
+    if exercise_id is None:
+        return jsonify({"error": "set not found"}), 404
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT workout_id FROM workout_exercises WHERE id=?", (exercise_id,)).fetchone()
+    workout = db.get_workout(row["workout_id"]) if row else None
+    return jsonify({"workout": workout})
+
+
+@app.route("/api/workouts/sets/<int:set_id>", methods=["DELETE"])
+def remove_set(set_id):
+    workout_id = db.delete_set(set_id)
+    workout = db.get_workout(workout_id) if workout_id else None
+    return jsonify({"ok": True, "workout": workout, "workout_deleted": workout is None})
+
+
 if __name__ == "__main__":
     db.init_db()
     app.run(host="0.0.0.0", port=config.API_PORT, debug=True)

@@ -120,6 +120,36 @@ CREATE TABLE IF NOT EXISTS pending_confirms (
     meal_slot TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS workouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    log_date TEXT NOT NULL,
+    logged_at TEXT NOT NULL,
+    name TEXT NOT NULL,
+    notes TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_workouts_date ON workouts(log_date);
+
+CREATE TABLE IF NOT EXISTS workout_exercises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workout_id INTEGER NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    exercise_type TEXT NOT NULL DEFAULT 'strength',  -- strength | cardio
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_workout_exercises_workout ON workout_exercises(workout_id);
+
+CREATE TABLE IF NOT EXISTS workout_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exercise_id INTEGER NOT NULL REFERENCES workout_exercises(id) ON DELETE CASCADE,
+    set_number INTEGER NOT NULL,
+    reps REAL,
+    weight_kg REAL,
+    duration_sec REAL,
+    distance_km REAL,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
 """
 
 DEFAULT_NUTRIENTS = [
@@ -629,3 +659,246 @@ def update_pending_confirm(token, items):
     corrected draft, not the stale one the message was first sent with."""
     with get_conn() as conn:
         conn.execute("UPDATE pending_confirms SET items_json=? WHERE token=?", (json.dumps(items), token))
+
+
+# ---------------- workouts, exercises & sets ----------------
+# Mirrors the meals/meal_items shape: a `workout` is one session on a given
+# day, `workout_exercises` are the movements performed, `workout_sets` are
+# each set logged against an exercise. Nothing here is pre-aggregated --
+# volume (reps * weight_kg) and cardio duration/distance totals are always
+# computed on read from the raw sets, same reasoning as meal nutrients
+# never being stored pre-multiplied.
+
+VALID_EXERCISE_TYPES = ("strength", "cardio")
+
+
+def _row_to_set(row):
+    d = dict(row)
+    if d.get("reps") is not None and d.get("weight_kg") is not None:
+        d["volume_kg"] = round(safe_num(d["reps"]) * safe_num(d["weight_kg"]), 2)
+    else:
+        d["volume_kg"] = 0
+    return d
+
+
+def _row_to_exercise(row, sets):
+    d = dict(row)
+    d["sets"] = sets
+    d["total_volume_kg"] = round(sum(s["volume_kg"] for s in sets), 2)
+    d["total_duration_min"] = round(sum(safe_num(s.get("duration_sec")) for s in sets) / 60, 2)
+    d["total_distance_km"] = round(sum(safe_num(s.get("distance_km")) for s in sets), 2)
+    return d
+
+
+def _row_to_workout(row, exercises):
+    d = dict(row)
+    d["exercises"] = exercises
+    d["total_volume_kg"] = round(sum(e["total_volume_kg"] for e in exercises), 2)
+    d["total_sets"] = sum(len(e["sets"]) for e in exercises)
+    d["total_duration_min"] = round(sum(e["total_duration_min"] for e in exercises), 2)
+    d["total_distance_km"] = round(sum(e["total_distance_km"] for e in exercises), 2)
+    return d
+
+
+def _load_exercises(conn, workout_id):
+    exercise_rows = conn.execute(
+        "SELECT * FROM workout_exercises WHERE workout_id=? ORDER BY sort_order, id", (workout_id,)
+    ).fetchall()
+    exercises = []
+    for erow in exercise_rows:
+        set_rows = conn.execute(
+            "SELECT * FROM workout_sets WHERE exercise_id=? ORDER BY sort_order, id", (erow["id"],)
+        ).fetchall()
+        exercises.append(_row_to_exercise(erow, [_row_to_set(r) for r in set_rows]))
+    return exercises
+
+
+def create_workout(name=None, log_date=None, notes=None):
+    ts = now_iso()
+    date = log_date or today_str()
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO workouts (log_date, logged_at, name, notes) VALUES (?,?,?,?)",
+            (date, ts, name or "Workout", notes),
+        )
+        workout_id = cur.lastrowid
+    return get_workout(workout_id)
+
+
+def get_workout(workout_id):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM workouts WHERE id=?", (workout_id,)).fetchone()
+        if not row:
+            return None
+        exercises = _load_exercises(conn, workout_id)
+    return _row_to_workout(row, exercises)
+
+
+def get_day_workouts(log_date):
+    with get_conn() as conn:
+        workout_rows = conn.execute(
+            "SELECT * FROM workouts WHERE log_date=? ORDER BY logged_at", (log_date,)
+        ).fetchall()
+        workouts = [_row_to_workout(wrow, _load_exercises(conn, wrow["id"])) for wrow in workout_rows]
+    return workouts
+
+
+def get_range_workouts(start_date, end_date):
+    with get_conn() as conn:
+        workout_rows = conn.execute(
+            "SELECT * FROM workouts WHERE log_date BETWEEN ? AND ? ORDER BY log_date, logged_at",
+            (start_date, end_date),
+        ).fetchall()
+        workouts = [_row_to_workout(wrow, _load_exercises(conn, wrow["id"])) for wrow in workout_rows]
+    return workouts
+
+
+def update_workout(workout_id, name=None, notes=None):
+    sets, params = [], []
+    if name is not None:
+        sets.append("name=?")
+        params.append(name)
+    if notes is not None:
+        sets.append("notes=?")
+        params.append(notes)
+    if not sets:
+        return
+    with get_conn() as conn:
+        conn.execute(f"UPDATE workouts SET {', '.join(sets)} WHERE id=?", (*params, workout_id))
+
+
+def delete_workout(workout_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM workouts WHERE id=?", (workout_id,))  # cascades exercises + sets
+
+
+def add_exercise(workout_id, name, exercise_type="strength"):
+    if exercise_type not in VALID_EXERCISE_TYPES:
+        raise ValueError(f"exercise_type must be one of {VALID_EXERCISE_TYPES}")
+    with get_conn() as conn:
+        next_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM workout_exercises WHERE workout_id=?",
+            (workout_id,),
+        ).fetchone()["n"]
+        cur = conn.execute(
+            "INSERT INTO workout_exercises (workout_id, name, exercise_type, sort_order) VALUES (?,?,?,?)",
+            (workout_id, name, exercise_type, next_order),
+        )
+        return cur.lastrowid
+
+
+def delete_exercise(exercise_id):
+    """Deletes an exercise (and its sets); if it was the last exercise in
+    its workout, deletes the (now-empty) workout too. Returns the
+    workout_id (deleted or still-alive)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT workout_id FROM workout_exercises WHERE id=?", (exercise_id,)).fetchone()
+        if not row:
+            return None
+        workout_id = row["workout_id"]
+        conn.execute("DELETE FROM workout_exercises WHERE id=?", (exercise_id,))  # cascades sets
+        remaining = conn.execute(
+            "SELECT COUNT(*) AS n FROM workout_exercises WHERE workout_id=?", (workout_id,)
+        ).fetchone()["n"]
+        if remaining == 0:
+            conn.execute("DELETE FROM workouts WHERE id=?", (workout_id,))
+    return workout_id
+
+
+def add_set(exercise_id, reps=None, weight_kg=None, duration_sec=None, distance_km=None):
+    with get_conn() as conn:
+        next_num = conn.execute(
+            "SELECT COALESCE(MAX(set_number), 0) + 1 AS n FROM workout_sets WHERE exercise_id=?",
+            (exercise_id,),
+        ).fetchone()["n"]
+        cur = conn.execute(
+            "INSERT INTO workout_sets (exercise_id, set_number, reps, weight_kg, duration_sec, distance_km, sort_order) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (exercise_id, next_num,
+             safe_num(reps, None) if reps is not None else None,
+             safe_num(weight_kg, None) if weight_kg is not None else None,
+             safe_num(duration_sec, None) if duration_sec is not None else None,
+             safe_num(distance_km, None) if distance_km is not None else None,
+             next_num - 1),
+        )
+        return cur.lastrowid
+
+
+def update_set(set_id, reps=None, weight_kg=None, duration_sec=None, distance_km=None):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM workout_sets WHERE id=?", (set_id,)).fetchone()
+        if not row:
+            return None
+        conn.execute(
+            "UPDATE workout_sets SET reps=?, weight_kg=?, duration_sec=?, distance_km=? WHERE id=?",
+            (safe_num(reps, row["reps"]) if reps is not None else row["reps"],
+             safe_num(weight_kg, row["weight_kg"]) if weight_kg is not None else row["weight_kg"],
+             safe_num(duration_sec, row["duration_sec"]) if duration_sec is not None else row["duration_sec"],
+             safe_num(distance_km, row["distance_km"]) if distance_km is not None else row["distance_km"],
+             set_id),
+        )
+        exercise_id = row["exercise_id"]
+    return exercise_id
+
+
+def delete_set(set_id):
+    """Deletes a set; if it was the last set for its exercise, deletes the
+    exercise too (and, transitively, the workout if that was its last
+    exercise). Returns the workout_id (for re-fetching the updated session)."""
+    with get_conn() as conn:
+        row = conn.execute("SELECT exercise_id FROM workout_sets WHERE id=?", (set_id,)).fetchone()
+        if not row:
+            return None
+        exercise_id = row["exercise_id"]
+        conn.execute("DELETE FROM workout_sets WHERE id=?", (set_id,))
+        remaining = conn.execute(
+            "SELECT COUNT(*) AS n FROM workout_sets WHERE exercise_id=?", (exercise_id,)
+        ).fetchone()["n"]
+        workout_row = conn.execute(
+            "SELECT workout_id FROM workout_exercises WHERE id=?", (exercise_id,)
+        ).fetchone()
+        workout_id = workout_row["workout_id"] if workout_row else None
+        if remaining == 0 and workout_id is not None:
+            conn.execute("DELETE FROM workout_exercises WHERE id=?", (exercise_id,))
+            left = conn.execute(
+                "SELECT COUNT(*) AS n FROM workout_exercises WHERE workout_id=?", (workout_id,)
+            ).fetchone()["n"]
+            if left == 0:
+                conn.execute("DELETE FROM workouts WHERE id=?", (workout_id,))
+    return workout_id
+
+
+def list_exercise_names(limit=40):
+    """Distinct exercise names used before, most-recent-first -- powers the
+    quick-add datalist so repeat lifts don't need retyping."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT name, MAX(we.id) AS last_id FROM workout_exercises we GROUP BY LOWER(name) "
+            "ORDER BY last_id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [r["name"] for r in rows]
+
+
+def personal_records(limit=8):
+    """Best set (highest weight_kg, ties broken by reps) ever logged per
+    exercise name -- a cheap, deterministic "PR board" that needs no
+    aggregation beyond a single grouped query."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT we.name AS name, ws.weight_kg AS weight_kg, ws.reps AS reps, w.log_date AS log_date
+            FROM workout_sets ws
+            JOIN workout_exercises we ON we.id = ws.exercise_id
+            JOIN workouts w ON w.id = we.workout_id
+            WHERE ws.weight_kg IS NOT NULL AND ws.reps IS NOT NULL
+            """
+        ).fetchall()
+    best = {}
+    for r in rows:
+        key = r["name"].strip().lower()
+        cur = best.get(key)
+        if cur is None or (r["weight_kg"], r["reps"]) > (cur["weight_kg"], cur["reps"]):
+            best[key] = dict(r)
+    records = sorted(best.values(), key=lambda r: r["weight_kg"] * r["reps"], reverse=True)
+    return records[:limit]
