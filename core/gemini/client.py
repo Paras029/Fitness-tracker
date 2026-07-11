@@ -31,22 +31,37 @@ log = logging.getLogger("gemini")
 DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
 
 
-def call(parts, want_json=True, response_schema=None, max_output_tokens=None):
+def call(parts, want_json=True, response_schema=None, max_output_tokens=None, use_search=False):
+    """use_search=True adds Gemini's google_search grounding tool, so the
+    model can check a real page instead of only recalling training data --
+    used for the on-demand correction flow, where "look it up" is exactly
+    what a user asking for a fix wants. responseSchema is deliberately
+    dropped when grounding is on: whether structured output and the search
+    tool can be combined varies by model/tier and isn't something this app
+    can verify without a live key, so grounded calls fall back to prompt-
+    described JSON (parsed by extract_json's regex fallback below) rather
+    than risk silently breaking. Callers should treat a grounded call as
+    best-effort and retry ungrounded on failure -- see review.py."""
     if not config.GEMINI_API_KEY:
         log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
         return None
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
     body = {"contents": [{"parts": parts}]}
+    if use_search:
+        body["tools"] = [{"google_search": {}}]
     if want_json:
-        gen_config = {"responseMimeType": "application/json"}
-        if response_schema:
-            # A schema *constrains* generation -- required fields genuinely
-            # cannot be omitted, which is a much stronger guarantee than
-            # asking nicely in the prompt text and hoping it's followed.
-            gen_config["responseSchema"] = response_schema
+        gen_config = {}
+        if not use_search:
+            gen_config["responseMimeType"] = "application/json"
+            if response_schema:
+                # A schema *constrains* generation -- required fields genuinely
+                # cannot be omitted, which is a much stronger guarantee than
+                # asking nicely in the prompt text and hoping it's followed.
+                gen_config["responseSchema"] = response_schema
         if max_output_tokens:
             gen_config["maxOutputTokens"] = max_output_tokens
-        body["generationConfig"] = gen_config
+        if gen_config:
+            body["generationConfig"] = gen_config
     if DEBUG:
         log.warning("Gemini request body: %s", json.dumps(body)[:2000])
 

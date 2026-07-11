@@ -59,6 +59,40 @@ def _has_core_macros(d):
     return all(k in d for k in _CORE_MACROS)
 
 
+# Atwater: kcal = 4*protein + 4*carbs + 9*fat (fiber contributes ~2kcal/g,
+# not 4, so high-fiber foods legitimately run a bit under this -- the
+# tolerance below already covers that along with ordinary rounding).
+_KCAL_RECONCILE_TOLERANCE = 0.15
+# Only nutrients nobody has actually vetted (pure LLM guesses) are worth
+# silently overriding -- a real API's kcal is measured, not derived, and
+# a user's explicit correction is deliberate; neither should be
+# second-guessed by an arithmetic heuristic behind their back.
+_RECONCILABLE_CONFIDENCE = ("llm_filled", "llm_estimated")
+
+
+def _reconcile_kcal(nutrients, confidence):
+    """Deterministic sanity check -- no LLM call, runs on every item, every
+    time. An LLM-only kcal estimate that doesn't reconcile with its own
+    protein/carbs/fat within ~15% is provably wrong regardless of how
+    confident the model sounded, so this just fixes it with arithmetic
+    instead of hoping a future prompt gets it right. This is exactly the
+    class of inconsistency ("cal should equal 4p+4c+9f") a human would
+    catch at a glance -- no reason to spend a Gemini call catching it."""
+    if confidence not in _RECONCILABLE_CONFIDENCE:
+        return nutrients
+    if not all(k in nutrients for k in _CORE_MACROS):
+        return nutrients
+    p, c, f = nutrients["protein"], nutrients["carbs"], nutrients["fat"]
+    computed = 4 * p + 4 * c + 9 * f
+    if computed <= 0:
+        return nutrients
+    actual = nutrients["kcal"]
+    if actual <= 0 or abs(actual - computed) / computed > _KCAL_RECONCILE_TOLERANCE:
+        nutrients = dict(nutrients)
+        nutrients["kcal"] = round(computed, 1)
+    return nutrients
+
+
 def _current_nutrient_keys():
     """The nutrient fields Gemini should be asked to estimate right now --
     every enabled nutrient_defs key (built-ins plus whatever the user has
@@ -164,6 +198,8 @@ def _resolve_ingredients(extracted_items):
         })
 
     _retry_missing_macros_once(resolved)
+    for item in resolved:
+        item["nutrients_per_100g"] = _reconcile_kcal(item["nutrients_per_100g"], item["confidence"])
     return resolved
 
 

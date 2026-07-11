@@ -126,8 +126,34 @@ _REFINE_INSTRUCTIONS = (
     "correct, leave every item exactly as it is and explain why in the "
     "note. Set \"action\":\"confirmed\" if you changed nothing, "
     "\"corrected\" if your review did turn up something worth fixing.\n\n"
-    "Never change an item the user neither instructed you to change nor "
-    "expressed doubt about.\n\n"
+    "Never change an ITEM the user neither instructed you to change nor "
+    "expressed doubt about -- but this is scoped to other items, not to "
+    "other FIELDS of the item they did ask about.\n\n"
+    "CRITICAL -- when a nutrient value itself is what's being corrected "
+    "(not just the weight), remember kcal, protein, carbs, and fat are not "
+    "independent: kcal must stay within about 15% of 4*protein + 4*carbs "
+    "+ 9*fat (Atwater, standard for all nutrition labels). If the user "
+    "corrects one of these four for an item, check whether the other "
+    "three still reconcile with the new value -- if they don't anymore, "
+    "adjust the ones you're least confident in so the whole item stays "
+    "internally consistent, and say what you adjusted (and why) in "
+    "\"note\". Example: user says \"that item was actually only 200 "
+    "kcal\" and it's currently 165g protein / 0g carbs / 3.6g fat (which "
+    "alone implies ~226 kcal, already close) -- if instead protein was "
+    "31g and fat was way higher such that the math implied 500+ kcal, "
+    "lowering kcal to 200 without touching protein/fat would leave the "
+    "item self-contradictory, so scale the macros down too until they "
+    "roughly explain 200 kcal. Don't do this reflexively for every tiny "
+    "edit -- weight changes, ingredient swaps, and additions/removals "
+    "don't need this (grams scale everything proportionally already); it "
+    "only applies when a nutrient value is the thing being corrected and "
+    "the result would otherwise stop reconciling.\n\n"
+    "If you have web search available and the user's correction concerns "
+    "a specific known product or a factual nutrition claim you're unsure "
+    "of, use it to check a real source rather than relying only on what "
+    "you recall -- but don't let searching slow down or block a simple "
+    "correction (a stated weight or an added/removed ingredient never "
+    "needs a lookup).\n\n"
     "Current items (name, grams, nutrients per 100g): {items_json}\n"
     "Current totals: {totals_json}\n"
     "{sanity_block}"
@@ -170,10 +196,18 @@ def _response_schema(keys):
     }
 
 
-def refine_draft(items, totals, user_message, sanity=None, nutrient_keys=None):
+def refine_draft(items, totals, user_message, sanity=None, nutrient_keys=None, use_search=True):
     """Returns {"items": [...], "changed": [names], "action": str, "note":
     str} or None if the call failed (caller should leave the draft
-    untouched and tell the user to try rephrasing)."""
+    untouched and tell the user to try rephrasing).
+
+    use_search: try grounding the correction in a real web search first
+    (see client.call's docstring for why this drops responseSchema and
+    what that trades off). This is the "remediate" moment -- the one
+    place in the pipeline where spending an extra round-trip on a lookup
+    is worth it -- so it defaults on, with an automatic, transparent
+    fallback to the normal schema-constrained call if grounding isn't
+    supported or doesn't come back as usable JSON."""
     if not user_message or not user_message.strip():
         return None
     keys = nutrient_keys or NUTRIENT_KEYS
@@ -188,7 +222,15 @@ def refine_draft(items, totals, user_message, sanity=None, nutrient_keys=None):
               .replace("{sanity_block}", sanity_block)
               .replace("{message}", user_message.strip()))
     max_tokens = min(max(500, 150 * len(items) + 200), 8192)
-    result = call([{"text": prompt}], response_schema=_response_schema(keys), max_output_tokens=max_tokens)
+
+    result = None
+    if use_search:
+        result = call([{"text": prompt}], max_output_tokens=max_tokens, use_search=True)
+        if not isinstance(result, dict) or "items" not in result:
+            result = None  # fall through to the ungrounded, schema-constrained attempt below
+    if result is None:
+        result = call([{"text": prompt}], response_schema=_response_schema(keys), max_output_tokens=max_tokens)
+
     if not isinstance(result, dict) or "items" not in result:
         return None
     result.setdefault("changed", [])
