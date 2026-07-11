@@ -6,6 +6,8 @@ process is offline when you send a message, Telegram queues it and
 delivers it as soon as polling resumes -- no extra sync step needed.
 """
 
+import functools
+import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,7 +22,46 @@ from core import config, db, logging_service
 if not config.TELEGRAM_BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is not set -- add it to .env first.")
 
+log = logging.getLogger("telegram_bot")
+
 bot = telebot.TeleBot(config.TELEGRAM_BOT_TOKEN, parse_mode="Markdown")
+
+
+def _chat_id_of(update):
+    if hasattr(update, "chat"):  # a Message
+        return update.chat.id
+    if getattr(update, "message", None):  # a CallbackQuery
+        return update.message.chat.id
+    return None
+
+
+def safe_handler(fn):
+    """Every handler below is wrapped with this. Without it, any
+    unhandled exception (a network blip, a Telegram edit rate-limit, an
+    unexpected response shape) just vanishes into telebot's polling loop
+    -- the user sees nothing, or a staged message stays frozen on
+    "Calculating macros..." forever with no explanation. That's what
+    "unstable" looks like from the outside. This turns every such failure
+    into a visible, honest message instead of silence."""
+    @functools.wraps(fn)
+    def wrapped(update, *args, **kwargs):
+        try:
+            return fn(update, *args, **kwargs)
+        except Exception:
+            log.exception("Unhandled error in %s", fn.__name__)
+            chat_id = _chat_id_of(update)
+            if chat_id is not None:
+                try:
+                    bot.send_message(chat_id, "⚠️ Something went wrong processing that -- please try again. "
+                                               "If it keeps happening, run `python -m scripts.check_setup`.")
+                except Exception:
+                    log.exception("Also failed to notify the user about the error")
+            if hasattr(update, "id") and hasattr(update, "data"):  # a CallbackQuery specifically
+                try:
+                    bot.answer_callback_query(update.id, "Something went wrong -- try again.")
+                except Exception:
+                    pass
+    return wrapped
 
 # In-memory only: "what did this chat just confirm", used by /save.
 # Fine for a single-user bot process; lost on restart, which is harmless.
@@ -95,14 +136,19 @@ def meal_keyboard(token):
 
 
 def safe_edit(text, chat_id, message_id, reply_markup=None):
-    """Telegram errors on an edit whose text+markup are byte-identical to
-    what's already there ("message is not modified") -- harmless, just
-    means this stage produced the same content as the last one."""
+    """Never raises -- a failed edit (byte-identical content, a rate limit
+    on rapid consecutive edits, a transient network blip) must never abort
+    the pipeline work underneath it. An intermediate status edit like
+    "Calculating macros..." is cosmetic; if it fails, the final edit with
+    the real result still gets attempted. Previously this re-raised on
+    anything but "message is not modified", which -- with no caller
+    catching it -- silently killed the whole staged flow and left the
+    message frozen on whatever stage it was last showing."""
     try:
         bot.edit_message_text(text, chat_id, message_id, reply_markup=reply_markup)
     except Exception as e:
         if "message is not modified" not in str(e).lower():
-            raise
+            log.warning("Failed to edit message %s in chat %s: %s", message_id, chat_id, e)
 
 
 def draft_message_text(draft, prefix="", sanity=None):
@@ -145,9 +191,20 @@ def staged_build_and_offer(chat_id, extract_fn, prefix=""):
     """Sends one message and edits it in place through each real pipeline
     stage -- ingredients appear as soon as extraction finishes, then
     macros once the fill call finishes -- rather than one long silence
-    followed by the finished result."""
+    followed by the finished result.
+
+    Each stage is wrapped individually: a failure here must always resolve
+    the message to a clear, specific error rather than leaving it frozen
+    on "Identifying ingredients..." or "Calculating macros..." forever,
+    which previously looked exactly like the bot silently not working."""
     msg = bot.send_message(chat_id, (prefix + "\n" if prefix else "") + "\U0001F50E Identifying ingredients…")
-    extraction = extract_fn()
+
+    try:
+        extraction = extract_fn()
+    except Exception:
+        log.exception("Extraction failed in staged_build_and_offer")
+        safe_edit("⚠️ Something went wrong identifying that -- please try again.", chat_id, msg.message_id)
+        return
     if extraction.get("error") or not extraction.get("items"):
         safe_edit(extraction.get("error") or "Couldn't identify any food in that.", chat_id, msg.message_id)
         return
@@ -159,7 +216,13 @@ def staged_build_and_offer(chat_id, extract_fn, prefix=""):
     lines += "\n\n\U0001F9EE Calculating macros…"
     safe_edit(lines, chat_id, msg.message_id)
 
-    draft = logging_service.resolve_draft(extraction)
+    try:
+        draft = logging_service.resolve_draft(extraction)
+    except Exception:
+        log.exception("resolve_draft failed in staged_build_and_offer")
+        safe_edit("⚠️ Identified the food, but something went wrong calculating macros -- please try again.",
+                   chat_id, msg.message_id)
+        return
     if draft.get("error") or not draft.get("items"):
         safe_edit(draft.get("error") or "Couldn't resolve nutrition for that.", chat_id, msg.message_id)
         return
@@ -172,6 +235,7 @@ def staged_build_and_offer(chat_id, extract_fn, prefix=""):
 # ---------------- commands ----------------
 
 @bot.message_handler(commands=["start", "help"])
+@safe_handler
 def cmd_start(message):
     bot.send_message(message.chat.id,
         "*Nutrition Ledger bot*\n\n"
@@ -196,6 +260,7 @@ def cmd_start(message):
 
 
 @bot.message_handler(commands=["today"])
+@safe_handler
 def cmd_today(message):
     summary = logging_service.build_day_summary(db.today_str())
     lines = [f"*Today ({summary['date']})* -- {summary['meal_count']} meals logged\n"]
@@ -208,6 +273,7 @@ def cmd_today(message):
 
 
 @bot.message_handler(commands=["water"])
+@safe_handler
 def cmd_water(message):
     parts = message.text.split()
     try:
@@ -224,6 +290,7 @@ def cmd_water(message):
 
 
 @bot.message_handler(commands=["save"])
+@safe_handler
 def cmd_save(message):
     name = message.text.partition(" ")[2].strip()
     meal = _last_logged.get(message.chat.id)
@@ -240,6 +307,7 @@ def cmd_save(message):
 
 
 @bot.message_handler(commands=["quick"])
+@safe_handler
 def cmd_quick(message):
     meals = db.list_saved_meals()
     if not meals:
@@ -252,9 +320,13 @@ def cmd_quick(message):
 
 
 @bot.message_handler(commands=["report"])
+@safe_handler
 def cmd_report(message):
-    bot.send_message(message.chat.id, "Crunching this week's numbers...")
     context = logging_service.build_week_context(db.today_str())
+    if context["days_tracked"] == 0:
+        bot.send_message(message.chat.id, "Nothing logged this week yet -- log a few meals and check back!")
+        return
+    bot.send_message(message.chat.id, "Crunching this week's numbers...")
     previous_context = logging_service.previous_week_context(db.today_str())
     report = gemini_report_or_fallback(context, previous_context)
     lines = [f"*Weekly report ({context['start_date']} - {context['end_date']})*\n"]
@@ -286,6 +358,7 @@ def gemini_report_or_fallback(context, previous_context=None):
 # ---------------- natural language logging ----------------
 
 @bot.message_handler(content_types=["text"])
+@safe_handler
 def handle_text(message):
     if message.text.startswith("/"):
         return  # unknown command, ignore
@@ -296,22 +369,53 @@ def handle_text(message):
     staged_build_and_offer(message.chat.id, lambda: logging_service.extract_only(text=message.text))
 
 
+def _download_telegram_file(file_id):
+    """Wraps the two-step Telegram file fetch (get_file then download) so a
+    transient failure here -- large file, flaky connection, an expired
+    file_path -- gets one retry and then a clear exception the caller can
+    turn into a specific error message, instead of either crashing with no
+    user-facing feedback or (previously) never even reaching the point
+    where a "Identifying ingredients..." message gets sent."""
+    import time
+    last_error = None
+    for attempt in range(2):
+        try:
+            file_info = bot.get_file(file_id)
+            return bot.download_file(file_info.file_path)
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                log.warning("Telegram file download failed, retrying once: %s", e)
+                time.sleep(1)
+    raise last_error
+
+
 @bot.message_handler(content_types=["photo"])
+@safe_handler
 def handle_photo(message):
     bot.send_chat_action(message.chat.id, "typing")
-    file_info = bot.get_file(message.photo[-1].file_id)
-    image_bytes = bot.download_file(file_info.file_path)
+    try:
+        image_bytes = _download_telegram_file(message.photo[-1].file_id)
+    except Exception:
+        log.exception("Failed to download photo from Telegram")
+        bot.send_message(message.chat.id, "⚠️ Couldn't download that photo from Telegram -- please try sending it again.")
+        return
     caption = message.caption or ""
     staged_build_and_offer(message.chat.id,
         lambda: logging_service.extract_only(image_bytes=image_bytes, mime_type="image/jpeg", caption=caption))
 
 
 @bot.message_handler(content_types=["voice"])
+@safe_handler
 def handle_voice(message):
     from core import gemini
     bot.send_chat_action(message.chat.id, "typing")
-    file_info = bot.get_file(message.voice.file_id)
-    audio_bytes = bot.download_file(file_info.file_path)
+    try:
+        audio_bytes = _download_telegram_file(message.voice.file_id)
+    except Exception:
+        log.exception("Failed to download voice note from Telegram")
+        bot.send_message(message.chat.id, "⚠️ Couldn't download that voice note from Telegram -- please try again.")
+        return
     transcript = gemini.transcribe_voice(audio_bytes, "audio/ogg")
     if not transcript:
         bot.send_message(message.chat.id, "Couldn't make that out -- try again or send text instead.")
@@ -364,6 +468,7 @@ def handle_refine_reply(message):
 # ---------------- callbacks ----------------
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("log:"))
+@safe_handler
 def cb_log(call):
     _, token, slot = call.data.split(":", 2)
     pending = db.pop_pending_confirm(token)
@@ -375,22 +480,27 @@ def cb_log(call):
     draft = pending["items"]  # the whole draft dict was stored as "items" by create_pending_confirm
     meal = logging_service.confirm_meal(draft, slot)
     _last_logged[call.message.chat.id] = meal
-    bot.edit_message_text(
+    # The meal is already safely persisted above -- a failed edit here is
+    # purely cosmetic (the confirmation text just doesn't visibly update),
+    # never worth reporting as an error when the real work succeeded.
+    safe_edit(
         f"{MEAL_EMOJI.get(slot, '')} Logged as *{slot}*:\n\n{fmt_items(meal['items'])}{fmt_rating(meal)}",
         call.message.chat.id, call.message.message_id,
     )
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("discard:"))
+@safe_handler
 def cb_discard(call):
     token = call.data.split(":", 1)[1]
     db.pop_pending_confirm(token)
     _forget_draft(token)
     bot.answer_callback_query(call.id, "Discarded.")
-    bot.edit_message_text("Discarded.", call.message.chat.id, call.message.message_id)
+    safe_edit("Discarded.", call.message.chat.id, call.message.message_id)
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sanity:"))
+@safe_handler
 def cb_sanity(call):
     token = call.data.split(":", 1)[1]
     pending = db.peek_pending_confirm(token)
@@ -411,6 +521,7 @@ def cb_sanity(call):
 
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("quick:"))
+@safe_handler
 def cb_quick(call):
     meal_id = int(call.data.split(":", 1)[1])
     saved = {m["id"]: m for m in db.list_saved_meals()}

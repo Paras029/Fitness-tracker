@@ -19,9 +19,10 @@
                                           their concern about it.
 
   rating.py      rate_meal()             STAGE 3: healthiness rating for
-                 generate_weekly_report()a confirmed meal, the weekly
-                 answer_question()       report, and free-form Q&A over
-                 transcribe_voice()      already-computed data.
+                 generate_daily_report() a confirmed meal, the daily and
+                 generate_weekly_report()weekly reports, and free-form
+                 answer_question()       Q&A over already-computed data.
+                 transcribe_voice()
 
   client.py                              Shared HTTP plumbing (the only
                                           module that touches `requests`)
@@ -40,7 +41,9 @@ from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _e
 from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
 from core.gemini.fill import fill_nutrition
-from core.gemini.rating import answer_question, generate_weekly_report, rate_meal, transcribe_voice
+from core.gemini.rating import (
+    answer_question, generate_daily_report, generate_weekly_report, rate_meal, transcribe_voice,
+)
 from core.gemini.review import refine_draft, sanity_check_meal
 
 __all__ = [
@@ -49,6 +52,7 @@ __all__ = [
     "sanity_check_meal",
     "refine_draft",
     "rate_meal",
+    "generate_daily_report",
     "generate_weekly_report",
     "answer_question",
     "transcribe_voice",

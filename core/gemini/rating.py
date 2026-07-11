@@ -49,6 +49,68 @@ def rate_meal(label, meal_slot, items, totals):
     return result
 
 
+# ==================== daily report ====================
+#
+# Input:  day_summary (logging_service.build_day_summary() output),
+#         tracking_tier ("tracked"|"partial" -- callers should never call
+#         this for "untracked", see logging_service.build_daily_report)
+# Output: {"score": 0-100, "summary": str, "tips": [str,...], "tracking_note": str|null}
+
+_DAILY_REPORT_INSTRUCTIONS = (
+    "You are a nutrition coach scoring a single day's tracked food log for "
+    "a food-tracking app, out of 100.\n\n"
+    "This day's tracking completeness is \"{tier}\". {tier_instruction}\n\n"
+    "Score what was actually eaten -- macro balance relative to target, "
+    "protein adequacy, fiber, sugar/sodium load, likely food quality/"
+    "processing level -- not calorie volume alone; a day under target "
+    "isn't automatically a bad score if what was eaten was well-balanced.\n\n"
+    "Day data: {day_json}\n\n"
+    "Respond with JSON: {\"score\": integer 0-100 (100 = excellent day), "
+    "\"summary\": 2-3 sentence narrative about what was actually eaten "
+    "today, \"tips\": array of 1-3 short actionable suggestions, "
+    "\"tracking_note\": one short sentence if incomplete tracking affects "
+    "confidence in this score, else null}"
+)
+
+_DAILY_REPORT_RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "score": {"type": "INTEGER"},
+        "summary": {"type": "STRING"},
+        "tips": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "tracking_note": {"type": "STRING", "nullable": True},
+    },
+    "required": ["score", "summary", "tips"],
+}
+
+_TIER_INSTRUCTIONS = {
+    "tracked": "This looks like a complete day of tracking -- assess normally.",
+    "partial": "Only part of the day appears logged (tracked calories are "
+               "under half of today's target) -- likely a meal or two "
+               "wasn't logged, not that the user actually ate this "
+               "little. Still give your best score and analysis based on "
+               "what WAS logged (don't penalize the score just because "
+               "logging is incomplete), but set tracking_note to flag "
+               "that this may not reflect the full day.",
+}
+
+
+def generate_daily_report(day_summary, tracking_tier):
+    """Returns the shape above, or None if the call failed. Callers should
+    not invoke this for tracking_tier == "untracked" -- there's nothing to
+    score and no reason to spend a request on it; see
+    logging_service.build_daily_report, which enforces that."""
+    tier_instruction = _TIER_INSTRUCTIONS.get(tracking_tier, _TIER_INSTRUCTIONS["tracked"])
+    prompt = (_DAILY_REPORT_INSTRUCTIONS
+              .replace("{tier}", tracking_tier)
+              .replace("{tier_instruction}", tier_instruction)
+              .replace("{day_json}", json.dumps(day_summary)))
+    result = call([{"text": prompt}], response_schema=_DAILY_REPORT_RESPONSE_SCHEMA, max_output_tokens=500)
+    if not isinstance(result, dict) or "score" not in result:
+        return None
+    return result
+
+
 # ==================== supporting calls ====================
 
 def transcribe_voice(audio_bytes, mime_type="audio/ogg"):
@@ -74,18 +136,37 @@ def generate_weekly_report(context, previous_context=None):
     previous_context, if given, is the same shape context for the prior
     week -- lets the report cite real week-on-week deltas ("protein up
     12% vs last week") instead of describing the current week in
-    isolation."""
+    isolation.
+
+    context["averages"] is already computed ONLY over days with real data
+    (context["days_tracked"] of them) -- a day with nothing logged is
+    excluded entirely, not averaged in as a 0-calorie day, so the numbers
+    here are trustworthy as-is. context["untracked_dates"] /
+    ["partial_dates"] are still worth surfacing to the user, though, so
+    they understand what the average does and doesn't cover."""
     prompt = (
         "You are a nutrition coach producing a weekly report for a food-"
         "tracking app from this structured week of data:\n"
-        + json.dumps(context) + "\n"
+        + json.dumps(context) + "\n\n"
+        "IMPORTANT: \"averages\" and \"targets_vs_actual\" are already "
+        "computed only over the days with real logged data "
+        "(days_tracked=" + str(context.get("days_tracked")) + " out of 7) "
+        "-- days in untracked_dates had nothing logged at all and are "
+        "already excluded from those numbers, NOT counted as 0-calorie "
+        "days. Never describe an untracked day as if the user ate "
+        "nothing, and never imply the week's average reflects all 7 days "
+        "if untracked_dates is non-empty -- say how many days the average "
+        "is actually based on. If partial_dates is non-empty, mention "
+        "that those specific days look incompletely logged (under half "
+        "of target) without treating them as bad eating days.\n\n"
     )
     if previous_context:
         prompt += (
             "Here is the PRIOR week's data, for comparison -- cite at least "
             "one specific week-on-week change (up/down, with the number) if "
-            "the data supports it, don't just describe the current week in "
-            "isolation:\n" + json.dumps(previous_context) + "\n"
+            "the data supports it (only compare using days_tracked from "
+            "each week, same rule as above), don't just describe the "
+            "current week in isolation:\n" + json.dumps(previous_context) + "\n"
         )
     prompt += (
         "Respond with JSON: {\"summary\": a 2-3 sentence narrative summary, "

@@ -95,6 +95,17 @@
 
   .app-shell{ display:grid; grid-template-columns:76px 1fr; min-height:100vh; }
 
+  /* Multi-screen shell -- one top-level nav item per screen (nutrition
+     today, health/BCA and workouts to follow). Only one .screen is ever
+     shown at a time; switching is a pure client-side visibility toggle,
+     no routing/reload, so in-memory state (open meal cards, quick-add
+     drafts) on the current screen survives a round trip to another
+     screen and back. */
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+  .screen-placeholder{ padding:56px 30px; text-align:center; }
+  .screen-placeholder .empty-illustration{ width:40px; height:40px; }
+
   .sidebar{
     background:var(--paper-sunk); border-right:1px solid var(--line);
     display:flex; flex-direction:column; align-items:center; gap:28px;
@@ -397,6 +408,14 @@
   .insight-body b{ color:var(--ink); }
   .insight-body ul{ margin:8px 0 0; padding-left:18px; }
   .insight-watch{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); color:var(--warning); font-size:12.5px; }
+  .dr-score-row{ display:flex; align-items:baseline; gap:5px; margin-bottom:8px; }
+  .dr-score{ font-family:'IBM Plex Mono',monospace; font-size:32px; font-weight:600; transition:color .3s ease; }
+  .dr-score-label{ font-size:12px; color:var(--ink-faint); }
+  .dr-tips{ margin:8px 0 0; padding-left:18px; }
+  .dr-tracking-note{
+    margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+    color:var(--warning); font-size:12.5px;
+  }
 
   .ask-card{ padding:16px 18px 18px; }
   .thread{ display:flex; flex-direction:column; gap:10px; max-height:220px; overflow-y:auto; margin-bottom:10px; }
@@ -481,8 +500,14 @@
   <aside class="sidebar">
     <div class="mark">N</div>
     <nav class="navlist">
-      <div class="navitem active" tabindex="0" aria-label="Nutrition" aria-current="page">
+      <div class="navitem active" tabindex="0" aria-label="Nutrition" aria-current="page" data-screen="nutrition">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3c-4 3-6 6.5-6 10a6 6 0 0 0 12 0c0-3.5-2-7-6-10Z"/><path d="M12 3v18"/></svg>
+      </div>
+      <div class="navitem" tabindex="0" aria-label="Health" data-screen="health">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4.8 12.3 12 19.5l7.2-7.2a4.6 4.6 0 0 0-6.5-6.5L12 6.2l-.7-.7a4.6 4.6 0 0 0-6.5 6.5Z"/><path d="M8 12h1.5l1-2.5 2 5 1-2.5H16"/></svg>
+      </div>
+      <div class="navitem" tabindex="0" aria-label="Workouts" data-screen="workouts">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6.5 6.5 4 4M17.5 17.5 20 20M6.5 17.5 4 20M17.5 6.5 20 4"/><path d="M9 15 15 9"/><rect x="7.5" y="7.5" width="9" height="9" rx="2" transform="rotate(45 12 12)"/></svg>
       </div>
     </nav>
     <div class="sidebar-foot" style="display:flex; flex-direction:column; gap:8px;">
@@ -496,6 +521,7 @@
   </aside>
 
   <main class="main">
+    <div id="screen-nutrition" class="screen active">
     <div class="topbar">
       <div>
         <div class="eyebrow">Nutrition Ledger</div>
@@ -690,6 +716,22 @@
       <div class="stack">
         <div class="card insights-card">
           <div style="display:flex; align-items:baseline; justify-content:space-between;">
+            <h3 class="section-label">Daily report</h3>
+            <button class="btn btn-ghost" id="refreshDailyReport" style="padding:5px 10px; font-size:12px;" aria-label="Refresh daily report">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5"/></svg>
+              Refresh
+            </button>
+          </div>
+          <div class="section-sub" id="dailyReportSub" style="margin-bottom:10px;">Today, via Gemini</div>
+          <div class="dr-score-row">
+            <div class="dr-score" id="dailyScoreNum">--</div>
+            <div class="dr-score-label" id="dailyScoreLabel">/ 100</div>
+          </div>
+          <div class="insight-body" id="dailyReportText"></div>
+        </div>
+
+        <div class="card insights-card">
+          <div style="display:flex; align-items:baseline; justify-content:space-between;">
             <h3 class="section-label">Weekly report</h3>
             <button class="btn btn-ghost" id="genReport" style="padding:5px 10px; font-size:12px;">Generate</button>
           </div>
@@ -707,6 +749,35 @@
             </button>
           </div>
         </div>
+      </div>
+    </div>
+    </div>
+
+    <div id="screen-health" class="screen">
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">Nutrition Ledger</div>
+          <h1>Health &amp; body</h1>
+        </div>
+      </div>
+      <div class="card screen-placeholder">
+        <svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.8 12.3 12 19.5l7.2-7.2a4.6 4.6 0 0 0-6.5-6.5L12 6.2l-.7-.7a4.6 4.6 0 0 0-6.5 6.5Z"/><path d="M8 12h1.5l1-2.5 2 5 1-2.5H16"/></svg>
+        <div class="empty-title">Health tracking is coming soon</div>
+        <div class="empty-sub">Medical results, body composition (BCA), and water intake will live here -- a separate screen, interlinked with your nutrition data.</div>
+      </div>
+    </div>
+
+    <div id="screen-workouts" class="screen">
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">Nutrition Ledger</div>
+          <h1>Workouts</h1>
+        </div>
+      </div>
+      <div class="card screen-placeholder">
+        <svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6.5 6.5 4 4M17.5 17.5 20 20M6.5 17.5 4 20M17.5 6.5 20 4"/><path d="M9 15 15 9"/><rect x="7.5" y="7.5" width="9" height="9" rx="2" transform="rotate(45 12 12)"/></svg>
+        <div class="empty-title">Workout tracking is coming soon</div>
+        <div class="empty-sub">Logged sessions, sets/reps, and progress over time will live here.</div>
       </div>
     </div>
   </main>
@@ -1185,10 +1256,81 @@
 
   // ---------------- date nav ----------------
 
+  // ---------------- daily report ----------------
+  //
+  // Auto-generates once for today (on boot, or whenever nav lands back on
+  // today) since that's the day you actually want a live read on; any
+  // other day only generates on an explicit Refresh click, both to avoid
+  // firing a Gemini call on every date-nav click while browsing history
+  // and because a report for a day you're not looking at right now isn't
+  // worth the request. Cached per-date for the session so flipping back
+  // to a day already generated doesn't re-fire either.
+  var dailyReportCache = {};
+
+  function scoreColor(score){
+    if(score == null) return 'var(--ink-faint)';
+    if(score >= 75) return 'var(--good)';
+    if(score >= 50) return 'var(--warning)';
+    return 'var(--critical)';
+  }
+
+  function renderDailyReport(report){
+    var scoreEl = document.getElementById('dailyScoreNum');
+    var labelEl = document.getElementById('dailyScoreLabel');
+    var textEl = document.getElementById('dailyReportText');
+    if(report.score == null){
+      scoreEl.textContent = '--';
+      scoreEl.style.color = 'var(--ink-faint)';
+      labelEl.style.visibility = 'hidden';
+    } else {
+      scoreEl.textContent = report.score;
+      scoreEl.style.color = scoreColor(report.score);
+      labelEl.style.visibility = 'visible';
+    }
+    var html = '<p>' + report.summary + '</p>';
+    if(report.tips && report.tips.length){
+      html += '<ul class="dr-tips">' + report.tips.map(function(t){ return '<li>' + t + '</li>'; }).join('') + '</ul>';
+    }
+    if(report.tracking_note){
+      html += '<div class="dr-tracking-note">⚠ ' + report.tracking_note + '</div>';
+    }
+    textEl.innerHTML = html;
+  }
+
+  function fetchDailyReport(date){
+    document.getElementById('dailyReportSub').textContent = (date === todayISO() ? 'Today' : date) + ', via Gemini';
+    document.getElementById('dailyReportText').innerHTML = '<p class="loading-pulse">Generating…</p>';
+    return fetch('/api/report/daily?date=' + date).then(function(r){ return r.json(); }).then(function(report){
+      dailyReportCache[date] = report;
+      if(state.date === date) renderDailyReport(report);
+    });
+  }
+
+  function showDailyReportForDate(date){
+    document.getElementById('dailyReportSub').textContent = (date === todayISO() ? 'Today' : date) + ', via Gemini';
+    if(dailyReportCache[date]){
+      renderDailyReport(dailyReportCache[date]);
+      return;
+    }
+    if(date === todayISO()){
+      fetchDailyReport(date);
+    } else {
+      document.getElementById('dailyScoreNum').textContent = '--';
+      document.getElementById('dailyScoreNum').style.color = 'var(--ink-faint)';
+      document.getElementById('dailyScoreLabel').style.visibility = 'hidden';
+      document.getElementById('dailyReportText').innerHTML = '<p class="miss">Not generated for this day -- tap Refresh to generate it.</p>';
+    }
+  }
+
+  document.getElementById('refreshDailyReport').addEventListener('click', function(){
+    fetchDailyReport(state.date);
+  });
+
   function loadDay(date){
     state.date = date;
     api.day(date).then(renderDay);
     if(calState.loadedDates) renderCalendarGrid(); // keep the selected-day highlight in sync if open
+    showDailyReportForDate(date);
   }
   document.getElementById('prevDay').addEventListener('click', function(){ loadDay(shiftDate(state.date, -1)); });
   document.getElementById('nextDay').addEventListener('click', function(){ loadDay(shiftDate(state.date, 1)); });
@@ -1808,6 +1950,38 @@
     });
   });
 
+  // ---------------- screens ----------------
+  //
+  // Pure client-side visibility toggle -- see the .screen CSS comment.
+  // "health" and "workouts" are placeholders today; wiring nav to a
+  // named screen now means the next screen just needs a #screen-<name>
+  // container and its own boot logic, nothing here has to change.
+  var animatedScreens = {nutrition: true}; // nutrition's cards already animated in at boot
+  function showScreen(name){
+    document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('active'); });
+    var target = document.getElementById('screen-' + name);
+    if(target) target.classList.add('active');
+    document.querySelectorAll('.navitem').forEach(function(item){
+      var isActive = item.dataset.screen === name;
+      item.classList.toggle('active', isActive);
+      if(isActive) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
+    if(target && !animatedScreens[name] && !prefersReducedMotion){
+      animatedScreens[name] = true;
+      target.querySelectorAll('.card').forEach(function(card, i){
+        card.style.animationDelay = (Math.min(i, 9) * 0.05) + 's';
+        card.classList.add('card-enter');
+      });
+    }
+  }
+  document.querySelectorAll('.navitem[data-screen]').forEach(function(item){
+    item.addEventListener('click', function(){ showScreen(item.dataset.screen); });
+    item.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); showScreen(item.dataset.screen); }
+    });
+  });
+
   // ---------------- boot ----------------
   document.getElementById('exportLink').href = '/api/export?format=csv';
   loadDay(state.date);
@@ -1818,9 +1992,14 @@
 
   // One-time entrance on first paint only -- date nav / edits never
   // replay this, since re-animating the whole page on every interaction
-  // would get tiresome fast rather than feel alive.
+  // would get tiresome fast rather than feel alive. Scoped to the
+  // starting screen only: a CSS animation never runs on a display:none
+  // element, so cards inside the other (inactive) screens would get
+  // stuck at the animation's 0%-keyframe opacity:0 forever if included
+  // here -- each screen gets its own entrance the first time it's shown
+  // instead (see showScreen).
   if(!prefersReducedMotion){
-    document.querySelectorAll('.card').forEach(function(card, i){
+    document.querySelectorAll('#screen-nutrition .card').forEach(function(card, i){
       card.style.animationDelay = (Math.min(i, 9) * 0.05) + 's';
       card.classList.add('card-enter');
     });

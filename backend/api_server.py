@@ -320,13 +320,26 @@ def quickadd_confirm():
 
 # ---------------- reports & ask ----------------
 
+@app.route("/api/report/daily")
+def report_daily():
+    date = request.args.get("date") or db.today_str()
+    report = logging_service.build_daily_report(date)
+    return jsonify(report)
+
+
 @app.route("/api/report/weekly")
 def report_weekly():
     from core import gemini
     end = request.args.get("end") or db.today_str()
     context = logging_service.build_week_context(end)
     previous_context = logging_service.previous_week_context(end)
-    report = gemini.generate_weekly_report(context, previous_context=previous_context) or {}
+    if context["days_tracked"] == 0:
+        # Nothing to analyze -- skip the LLM call entirely rather than
+        # asking it to narrate a week of silence.
+        report = {"summary": "Nothing logged in this window yet -- log a few days and check back.",
+                   "suggestions": [], "watch": None}
+    else:
+        report = gemini.generate_weekly_report(context, previous_context=previous_context) or {}
     return jsonify({"context": context, "previous_context": previous_context, "report": report})
 
 

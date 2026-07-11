@@ -477,20 +477,46 @@ def nutrient_contribution(log_date, nutrient_key):
     return {"total": round(total, 1), "items": rows}
 
 
+def _day_tracking_tier(kcal_value, kcal_target):
+    """A day with nothing logged is NOT a 0-calorie day -- it's a day with
+    no data, and averaging/scoring it as if the user ate zero silently
+    wrecks every aggregate (a brand-new user with 6 unused days and 1 real
+    day looks like they're starving). Classifies into:
+      "untracked" -- effectively nothing logged (a few kcal of rounding
+                     noise at most). Exclude entirely from analysis/scoring.
+      "partial"   -- some real logging, but under half of target -- likely
+                     an incomplete day (forgot to log dinner, etc). Still
+                     worth analyzing, but call out the gap rather than
+                     silently treating it as a genuinely light day.
+      "tracked"   -- confident enough to analyze/score normally.
+    """
+    if kcal_value <= 5:
+        return "untracked"
+    if kcal_target and kcal_value < 0.5 * kcal_target:
+        return "partial"
+    return "tracked"
+
+
 def build_day_summary(log_date):
     totals, meals = db.day_totals(log_date)
     defs = db.list_nutrient_defs(enabled_only=True)
     nutrients = []
+    kcal_value, kcal_target = 0, 0
     for d in defs:
         target = db.resolve_target(d)
         value = round(totals.get(d["key"], 0), 1)
+        if d["key"] == "kcal":
+            kcal_value, kcal_target = value, target
         nutrients.append({
             "key": d["key"], "label": d["label"], "unit": d["unit"],
             "category": d["category"], "direction": d["direction"],
             "value": value, "target": target,
             "pct": round(100 * value / target, 1) if target else None,
         })
-    return {"date": log_date, "nutrients": nutrients, "meal_count": len(meals), "meals": meals}
+    return {
+        "date": log_date, "nutrients": nutrients, "meal_count": len(meals), "meals": meals,
+        "tracking_tier": _day_tracking_tier(kcal_value, kcal_target),
+    }
 
 
 def build_week_context(end_date, days=7):
@@ -504,6 +530,8 @@ def build_week_context(end_date, days=7):
         by_date.setdefault(m["log_date"], []).append(m)
 
     defs = {d["key"]: d for d in db.list_nutrient_defs(enabled_only=True)}
+    kcal_target = db.resolve_target(defs["kcal"]) if "kcal" in defs else 0
+
     daily = []
     for i in range(days):
         d = (start + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -512,11 +540,21 @@ def build_week_context(end_date, days=7):
         for m in day_meals:
             for k, v in m["totals"].items():
                 totals[k] = totals.get(k, 0) + db.safe_num(v)
-        daily.append({"date": d, "totals": {k: round(v, 1) for k, v in totals.items()}})
+        totals = {k: round(v, 1) for k, v in totals.items()}
+        tier = _day_tracking_tier(totals.get("kcal", 0), kcal_target)
+        daily.append({"date": d, "totals": totals, "tracking_tier": tier})
+
+    # Only days with real data pull any weight in the averages -- an
+    # untracked day contributes nothing (not a silent 0), which is what
+    # actually fixes the "average is way below what I ate" symptom: that
+    # number was averaging in days from before the app was even in use.
+    scoring_days = [d for d in daily if d["tracking_tier"] != "untracked"]
+    untracked_dates = [d["date"] for d in daily if d["tracking_tier"] == "untracked"]
+    partial_dates = [d["date"] for d in daily if d["tracking_tier"] == "partial"]
 
     avg = {}
     for key in defs:
-        vals = [d["totals"].get(key, 0) for d in daily]
+        vals = [d["totals"].get(key, 0) for d in scoring_days]
         avg[key] = round(sum(vals) / len(vals), 1) if vals else 0
 
     gaps = []
@@ -532,7 +570,9 @@ def build_week_context(end_date, days=7):
 
     return {"start_date": start.strftime("%Y-%m-%d"), "end_date": end_date,
             "daily": daily, "averages": avg, "targets_vs_actual": gaps,
-            "avg_meal_rating": round(sum(ratings) / len(ratings), 1) if ratings else None}
+            "avg_meal_rating": round(sum(ratings) / len(ratings), 1) if ratings else None,
+            "days_tracked": len(scoring_days), "days_untracked": len(untracked_dates),
+            "untracked_dates": untracked_dates, "partial_dates": partial_dates}
 
 
 def previous_week_context(end_date, days=7):
@@ -544,3 +584,27 @@ def previous_week_context(end_date, days=7):
     end = datetime.strptime(end_date, "%Y-%m-%d")
     prev_end = end - timedelta(days=days)
     return build_week_context(prev_end.strftime("%Y-%m-%d"), days=days)
+
+
+def build_daily_report(log_date):
+    """Returns {"score": int|null, "summary": str, "tips": [str,...],
+    "tracking_note": str|null, "tracking_tier": str}.
+
+    For an "untracked" day this never calls Gemini at all -- there's
+    nothing to score and no reason to spend a request scoring silence.
+    "partial" days still get scored (from whatever WAS logged), just with
+    tracking_note flagging the gap. See _day_tracking_tier for the
+    tracked/partial/untracked cutoffs."""
+    summary = build_day_summary(log_date)
+    tier = summary["tracking_tier"]
+    if tier == "untracked":
+        return {
+            "score": None, "summary": "Nothing logged yet today.", "tips": [],
+            "tracking_note": None, "tracking_tier": tier,
+        }
+    report = gemini.generate_daily_report(summary, tier) or {
+        "score": None, "summary": "Report generation needs GEMINI_API_KEY set in .env.",
+        "tips": [], "tracking_note": None,
+    }
+    report["tracking_tier"] = tier
+    return report
