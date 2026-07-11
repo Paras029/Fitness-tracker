@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from core import config, db
+from core import config, db, health_db
 
 
 def run_dashboard():
@@ -29,6 +29,7 @@ def run_dashboard():
 
 def main():
     db.init_db()
+    health_db.init_health_db()
 
     dashboard_thread = threading.Thread(target=run_dashboard, daemon=True)
     dashboard_thread.start()

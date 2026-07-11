@@ -17,11 +17,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
-from core import config, db, logging_service
+from core import config, db, health_db, logging_service
+from backend.health_api import health_bp
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 app = Flask(__name__)
+app.register_blueprint(health_bp)
 
 
 @app.route("/")
@@ -356,4 +358,5 @@ def ask():
 
 if __name__ == "__main__":
     db.init_db()
+    health_db.init_health_db()
     app.run(host="0.0.0.0", port=config.API_PORT, debug=True)

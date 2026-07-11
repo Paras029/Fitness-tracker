@@ -27,6 +27,11 @@ USDA_API_KEY = os.environ.get("USDA_API_KEY") or "DEMO_KEY"
 DB_PATH = Path(os.environ.get("DB_PATH") or (ROOT_DIR / "data" / "nutrition.db"))
 API_PORT = int(os.environ.get("API_PORT") or "8001")
 
+# Where uploaded lab reports / other health documents are stored on disk
+# (the SQLite row only keeps the path). Created lazily on first upload,
+# same pattern as DB_PATH.parent.
+LAB_UPLOADS_DIR = Path(os.environ.get("LAB_UPLOADS_DIR") or (ROOT_DIR / "data" / "lab_uploads"))
+
 # Local timezone offset used to bucket "today" for the bot / reports.
 # Set to your IANA zone if you add zoneinfo handling later; for now a fixed
 # UTC offset in hours keeps this dependency-free for Termux.

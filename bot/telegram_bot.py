@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import telebot
 from telebot import types
 
-from core import config, db, logging_service
+from core import config, db, health_db, health_service, logging_service
 
 if not config.TELEGRAM_BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is not set -- add it to .env first.")
@@ -280,12 +280,7 @@ def cmd_water(message):
         ml = float(parts[1]) if len(parts) > 1 else 250.0
     except ValueError:
         ml = 250.0
-    # grams fixed at 100 (multiplier 1) so nutrients_per_100g == the actual
-    # value -- water isn't scaled by a "how much of it did you eat" weight.
-    db.create_meal("water", [{
-        "name": f"Water {ml:.0f}ml", "grams": 100,
-        "nutrients_per_100g": {"water_ml": ml}, "source": "user", "confidence": "database",
-    }])
+    health_service.log_water(ml)
     bot.send_message(message.chat.id, f"\U0001F4A7 Logged {ml:.0f}ml of water.")
 
 
@@ -540,5 +535,6 @@ def cb_quick(call):
 
 if __name__ == "__main__":
     db.init_db()
+    health_db.init_health_db()
     print("Nutrition Ledger bot running (long polling)...")
     bot.infinity_polling()

@@ -28,6 +28,14 @@
                                           module that touches `requests`)
                                           and response-JSON parsing.
 
+  lab_extraction.py extract_lab_results() Health-domain extraction: reads
+                                          a lab/blood-test report (PDF or
+                                          photo) into structured test
+                                          results. Same extraction-only
+                                          discipline as extraction.py --
+                                          in/out-of-range judgment happens
+                                          in core/health_service.py.
+
   common.py                              Nutrient-key constants and
                                           schema helpers shared by fill.py
                                           and review.py.
@@ -41,6 +49,7 @@ from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _e
 from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
 from core.gemini.fill import fill_nutrition
+from core.gemini.lab_extraction import extract_lab_results
 from core.gemini.rating import (
     answer_question, generate_daily_report, generate_weekly_report, rate_meal, transcribe_voice,
 )
@@ -56,6 +65,7 @@ __all__ = [
     "generate_weekly_report",
     "answer_question",
     "transcribe_voice",
+    "extract_lab_results",
     "NUTRIENT_KEYS",
     "CORE_MACRO_KEYS",
 ]

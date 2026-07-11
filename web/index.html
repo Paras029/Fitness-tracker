@@ -492,6 +492,45 @@
     .main{ padding:20px; }
     .micro-grid{ grid-template-columns:1fr; }
   }
+
+  /* ---- Health screen -- reuses the tokens/components above, adds only
+     what has no existing equivalent (sub-tabs, flag badges, water glass). ---- */
+  .health-tab{ display:none; }
+  .health-tab.active{ display:block; }
+  .flag-badge{
+    font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px;
+    text-transform:uppercase; letter-spacing:.03em; font-family:'IBM Plex Mono',monospace; flex:none;
+  }
+  .flag-badge.normal{ background:var(--accent-soft); color:var(--good); }
+  .flag-badge.low{ background:var(--amber-soft); color:var(--warning); }
+  .flag-badge.high{ background:var(--amber-soft); color:var(--critical); }
+  .lab-cat-group{ margin-bottom:14px; }
+  .lab-cat-group:last-child{ margin-bottom:0; }
+  .lab-cat-title{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .lab-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer; }
+  .lab-row:hover{ background:var(--paper-sunk); }
+  .lab-row:last-child{ border-bottom:none; }
+  .lab-row .ltname{ flex:1; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .lab-row .ltval{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink-muted); white-space:nowrap; }
+  .lab-row .ltdate{ font-size:11px; color:var(--ink-faint); width:78px; text-align:right; flex:none; }
+  .lab-draft-row{ display:grid; grid-template-columns:1.6fr 1fr .8fr .8fr .8fr; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .lab-draft-row input, .lab-draft-row select{
+    width:100%; border:1px solid var(--line-strong); border-radius:6px; padding:5px 7px; font-size:12px;
+    background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace;
+  }
+  .water-glass-wrap{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:22px 20px 8px; }
+  .water-glass{ width:120px; height:190px; overflow:visible; }
+  .water-fill-rect{ transition:y .6s cubic-bezier(.2,.8,.2,1), height .6s cubic-bezier(.2,.8,.2,1); }
+  .water-wave-path{ animation:water-wave-move 2.6s linear infinite; }
+  @keyframes water-wave-move{ from{ transform:translateX(0); } to{ transform:translateX(-32px); } }
+  .water-amount{ font-family:'IBM Plex Mono',monospace; font-size:28px; font-weight:600; }
+  .water-target{ font-size:12px; color:var(--ink-faint); }
+  .water-quickadd{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:4px; }
+  .water-manual-row{ display:flex; gap:8px; margin-top:10px; width:100%; max-width:260px; }
+  .water-manual-row input{
+    flex:1; background:var(--paper-sunk); border:1px solid var(--line); border-radius:8px; padding:9px 11px;
+    font-size:13px; color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:center;
+  }
 </style>
 </head>
 <body>
@@ -759,11 +798,152 @@
           <div class="eyebrow">Nutrition Ledger</div>
           <h1>Health &amp; body</h1>
         </div>
+        <div class="seg" id="healthTabSeg">
+          <button class="active" data-htab="bodycomp" type="button">Body Composition</button>
+          <button data-htab="labs" type="button">Labs</button>
+          <button data-htab="water" type="button">Water</button>
+        </div>
       </div>
-      <div class="card screen-placeholder">
-        <svg class="empty-illustration" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4.8 12.3 12 19.5l7.2-7.2a4.6 4.6 0 0 0-6.5-6.5L12 6.2l-.7-.7a4.6 4.6 0 0 0-6.5 6.5Z"/><path d="M8 12h1.5l1-2.5 2 5 1-2.5H16"/></svg>
-        <div class="empty-title">Health tracking is coming soon</div>
-        <div class="empty-sub">Medical results, body composition (BCA), and water intake will live here -- a separate screen, interlinked with your nutrition data.</div>
+
+      <div class="health-tab active" id="healthTab-bodycomp">
+        <div class="body-grid">
+          <div class="stack">
+            <div class="card trend-card">
+              <div class="trend-head">
+                <div>
+                  <div class="section-label">Weight trend</div>
+                  <div class="section-sub">Last 30 logged entries</div>
+                </div>
+              </div>
+              <div class="chart-wrap" id="bcWeightChartWrap">
+                <svg id="bcWeightChart" viewBox="0 0 720 220"></svg>
+                <div class="tooltip" id="bcWeightTooltip"></div>
+              </div>
+            </div>
+            <div class="card ledger-card">
+              <h3 class="section-label">Entries</h3>
+              <div id="bcEntryList" style="margin-top:10px;"></div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="card quickadd-card">
+              <h3 class="section-label">Log a weigh-in / scan</h3>
+              <div class="section-sub">Manual entry for now -- photo/PDF scan parsing is on the roadmap.</div>
+              <div class="field" style="margin-top:12px;"><label>Weight (kg)</label><input id="bcWeight" type="number" step="any"></div>
+              <div class="field-row">
+                <div class="field"><label>Body fat %</label><input id="bcBodyFat" type="number" step="any"></div>
+                <div class="field"><label>Skeletal muscle (kg)</label><input id="bcMuscle" type="number" step="any"></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label>Visceral fat</label><input id="bcVisceral" type="number" step="any"></div>
+                <div class="field"><label>BMR (kcal)</label><input id="bcBmr" type="number" step="any"></div>
+              </div>
+              <div class="field"><label>Body water %</label><input id="bcWater" type="number" step="any"></div>
+              <button class="btn btn-primary" id="bcSaveBtn" style="margin-top:6px; width:100%; justify-content:center;">Save entry</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="health-tab" id="healthTab-labs">
+        <div class="body-grid">
+          <div class="stack">
+            <div class="card quickadd-card">
+              <h3 class="section-label">Upload a lab report</h3>
+              <div class="section-sub">PDF or photo of a blood panel -- Gemini reads every test off it, you review before saving.</div>
+              <div class="quickadd-row" style="margin-top:12px;">
+                <button class="btn btn-ghost" id="labUploadBtn" style="flex:1; justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Upload PDF or photo
+                </button>
+                <input type="file" id="labUploadInput" accept="image/*,application/pdf" style="display:none;">
+              </div>
+              <div class="parsed" id="labDraftBox">
+                <div class="ph">Extracted tests -- review, then save</div>
+                <div id="labDraftRows"></div>
+                <div class="parsed-actions">
+                  <span class="miss" id="labDraftNote"></span>
+                  <button class="btn btn-primary" id="labConfirmBtn" style="padding:7px 14px; font-size:12px;">Save report</button>
+                </div>
+              </div>
+            </div>
+            <div class="card ledger-card">
+              <h3 class="section-label">Results</h3>
+              <div class="section-sub">Grouped by category -- click a test to see its trend.</div>
+              <div id="labResultsGroups" style="margin-top:12px;"></div>
+              <div id="labTrendPanel" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
+                <div class="section-label" id="labTrendTitle" style="font-size:13.5px;"></div>
+                <div class="chart-wrap" id="labTrendChartWrap">
+                  <svg id="labTrendChart" viewBox="0 0 720 220"></svg>
+                  <div class="tooltip" id="labTrendTooltip"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="card quickadd-card">
+              <h3 class="section-label">Categories</h3>
+              <div class="section-sub">Built-in panels plus any you add -- new tests slot into these automatically.</div>
+              <div id="labCategoryList" style="margin-top:10px;"></div>
+              <div class="field" style="margin-top:10px;"><label>New category</label><input id="newLabCategory" type="text" placeholder="e.g. Thyroid"></div>
+              <button class="btn btn-ghost" id="addLabCategoryBtn" style="margin-top:6px; padding:6px 12px; font-size:12px;">Add category</button>
+            </div>
+            <div class="card quickadd-card">
+              <h3 class="section-label">Other documents</h3>
+              <div class="section-sub">Anything else worth keeping -- not parsed, just stored and labeled.</div>
+              <div class="quickadd-row" style="margin-top:10px;">
+                <button class="btn btn-ghost" id="docUploadBtn" style="flex:1; justify-content:center;">Upload document</button>
+                <input type="file" id="docUploadInput" style="display:none;">
+              </div>
+              <div id="otherDocList" style="margin-top:10px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="health-tab" id="healthTab-water">
+        <div class="body-grid">
+          <div class="stack">
+            <div class="card">
+              <div class="water-glass-wrap">
+                <svg class="water-glass" viewBox="0 0 100 160" id="waterGlassSvg">
+                  <defs>
+                    <clipPath id="waterGlassClip"><path d="M18 8 H82 L74 150 Q50 158 26 150 Z"/></clipPath>
+                  </defs>
+                  <path d="M18 8 H82 L74 150 Q50 158 26 150 Z" fill="none" stroke="var(--line-strong)" stroke-width="2.5"/>
+                  <g clip-path="url(#waterGlassClip)">
+                    <rect id="waterFillRect" class="water-fill-rect" x="10" y="160" width="90" height="0" fill="var(--accent)" opacity="0.85"/>
+                    <path id="waterWavePath" class="water-wave-path" d="M10 160 q10 -6 20 0 t20 0 t20 0 t20 0 t20 0 v20 h-100 z" fill="var(--accent)" opacity="0.55"/>
+                  </g>
+                </svg>
+                <div class="water-amount" id="waterAmount">0 ml</div>
+                <div class="water-target" id="waterTargetLabel">of 2500 ml goal</div>
+                <div class="water-quickadd">
+                  <button class="btn btn-ghost" id="waterAdd250">+250ml</button>
+                  <button class="btn btn-ghost" id="waterAdd500">+500ml</button>
+                </div>
+                <div class="water-manual-row">
+                  <input type="number" id="waterManualMl" placeholder="custom ml">
+                  <button class="btn btn-primary" id="waterAddManual">Log</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="card trend-card">
+              <div class="trend-head">
+                <div>
+                  <div class="section-label">7-day intake</div>
+                  <div class="section-sub">Total ml logged per day</div>
+                </div>
+              </div>
+              <div class="chart-wrap" id="waterTrendChartWrap">
+                <svg id="waterTrendChart" viewBox="0 0 720 220"></svg>
+                <div class="tooltip" id="waterTrendTooltip"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1949,6 +2129,363 @@
       loadSavedMeals();
     });
   });
+
+  // ==================== Health screen ====================
+  // Kept separate from the nutrition code above: its own API surface
+  // (healthApi, not api), its own state, its own chart helper. It does
+  // reuse genuinely shared utilities from this closure (toast, fmt,
+  // todayISO, xLabelIndices, prefersReducedMotion) rather than
+  // reimplementing them.
+
+  var healthApi = {
+    bodyCompList: function(){ return fetch('/api/health/body-comp').then(r=>r.json()); },
+    createBodyComp: function(body){ return fetch('/api/health/body-comp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    labCategories: function(){ return fetch('/api/health/lab-categories').then(r=>r.json()); },
+    createLabCategory: function(body){ return fetch('/api/health/lab-categories', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
+    updateLabCategory: function(key, body){ return fetch('/api/health/lab-categories/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    extractLabReport: function(file){
+      var fd = new FormData(); fd.append('file', file);
+      return fetch('/api/health/labs/extract', {method:'POST', body: fd}).then(r=>r.json());
+    },
+    confirmLabReport: function(file, tests, reportDate, label){
+      var fd = new FormData();
+      fd.append('file', file); fd.append('tests', JSON.stringify(tests));
+      if(reportDate) fd.append('report_date', reportDate);
+      if(label) fd.append('label', label);
+      return fetch('/api/health/labs/confirm', {method:'POST', body: fd}).then(r=>r.json());
+    },
+    labResults: function(){ return fetch('/api/health/labs').then(r=>r.json()); },
+    labResultsFor: function(testName){ return fetch('/api/health/labs?test_name=' + encodeURIComponent(testName)).then(r=>r.json()); },
+    documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
+    uploadDocument: function(file){
+      var fd = new FormData(); fd.append('file', file);
+      return fetch('/api/health/documents', {method:'POST', body: fd}).then(r=>r.json());
+    },
+    waterToday: function(){ return fetch('/api/health/water').then(r=>r.json()); },
+    logWater: function(ml){ return fetch('/api/health/water', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ml: ml})}).then(r=>r.json()); },
+    waterTrend: function(days){ return fetch('/api/health/water?days=' + days).then(r=>r.json()); },
+  };
+
+  var healthState = { booted: false, labCategories: [], labResults: [] };
+
+  // ---- sub-tabs ----
+  document.querySelectorAll('#healthTabSeg button[data-htab]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('#healthTabSeg button[data-htab]').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      document.querySelectorAll('.health-tab').forEach(function(t){ t.classList.remove('active'); });
+      document.getElementById('healthTab-' + btn.dataset.htab).classList.add('active');
+    });
+  });
+
+  // ---- generic trend chart (parameterized version of drawKcalChart, so
+  // nutrition's chart code stays untouched but the same visual language
+  // is reused for weight / lab-value / water trends). Supports an
+  // optional shaded reference band instead of a single dashed goal line,
+  // for lab values that have a normal range rather than a single target. ----
+  function drawHealthTrendChart(svgId, tooltipId, wrapId, series, unit, color, band){
+    color = color || 'var(--accent)'; unit = unit || '';
+    var svg = document.getElementById(svgId);
+    if(!svg) return;
+    if(series.length === 0){ svg.innerHTML = ''; return; }
+    var W=720, H=220, PAD_L=44, PAD_R=10, PAD_T=14, PAD_B=26;
+    var vals = series.map(function(d){return d.v;});
+    if(band){ vals = vals.concat([band.low||0, band.high||0]); }
+    var max = Math.max.apply(null, vals.concat([1])) * 1.08;
+    var min = Math.max(Math.min.apply(null, vals) * 0.9, 0);
+    var innerW = W-PAD_L-PAD_R, innerH = H-PAD_T-PAD_B;
+    function X(i){ return PAD_L + (series.length<=1?0:i/(series.length-1))*innerW; }
+    function Y(v){ return PAD_T + innerH - ((v-min)/((max-min)||1))*innerH; }
+    var pts = series.map(function(d,i){ return [X(i), Y(d.v)]; });
+    var linePath = pts.map(function(p,i){ return (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
+    var areaPath = linePath + ' L'+pts[pts.length-1][0].toFixed(1)+','+(PAD_T+innerH)+' L'+pts[0][0].toFixed(1)+','+(PAD_T+innerH)+' Z';
+    var gridLines = '';
+    for(var s=0;s<=4;s++){
+      var gy = PAD_T + (innerH/4)*s;
+      gridLines += '<line x1="'+PAD_L+'" y1="'+gy+'" x2="'+(W-PAD_R)+'" y2="'+gy+'" stroke="var(--line)" stroke-width="1"/>';
+      var gv = Math.round(max - (max-min)*(s/4));
+      gridLines += '<text x="'+(PAD_L-8)+'" y="'+(gy+3)+'" text-anchor="end" font-size="9.5" fill="var(--ink-faint)" font-family="IBM Plex Mono, monospace">'+gv+'</text>';
+    }
+    var shownIdx = xLabelIndices(series.length);
+    var xLabels = shownIdx.map(function(i){
+      return '<text x="'+X(i)+'" y="'+(H-6)+'" text-anchor="middle" font-size="9.5" fill="var(--ink-faint)" font-family="IBM Plex Mono, monospace">'+series[i].d.slice(5)+'</text>';
+    }).join('');
+    var dots = pts.map(function(p){ return '<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3" fill="var(--paper-raised)" stroke="'+color+'" stroke-width="2"/>'; }).join('');
+    var bandRect = band && (band.low != null || band.high != null) ?
+      '<rect x="'+PAD_L+'" y="'+Y(band.high != null ? band.high : max)+'" width="'+innerW+'" height="'+(Y(band.low != null ? band.low : min) - Y(band.high != null ? band.high : max))+'" fill="var(--good)" opacity="0.08"/>' : '';
+    svg.innerHTML = gridLines + bandRect +
+      '<path d="'+areaPath+'" fill="'+color+'" opacity="0.12" stroke="none"/>' +
+      '<path d="'+linePath+'" fill="none" stroke="'+color+'" stroke-width="2"/>' + dots + xLabels +
+      '<rect id="'+svgId+'HitLayer" x="'+PAD_L+'" y="0" width="'+innerW+'" height="'+H+'" fill="transparent"/>';
+    svg.setAttribute('viewBox','0 0 '+W+' '+H);
+    var hit = document.getElementById(svgId+'HitLayer');
+    var tip = document.getElementById(tooltipId);
+    var wrap = document.getElementById(wrapId);
+    hit.addEventListener('mousemove', function(e){
+      var rect = svg.getBoundingClientRect();
+      var mx = (e.clientX - rect.left) * (W/rect.width);
+      var i = Math.max(0, Math.min(series.length-1, Math.round((mx-PAD_L)/innerW*(series.length-1))));
+      var p = pts[i]; var wrapRect = wrap.getBoundingClientRect(); var scale = wrapRect.width/W;
+      tip.style.left = (p[0]*scale)+'px'; tip.style.top = (p[1]*scale-54)+'px';
+      tip.innerHTML = '<div class="t-title">'+series[i].d+'</div>'+series[i].v.toLocaleString('en-US')+unit;
+      tip.classList.add('show');
+    });
+    hit.addEventListener('mouseleave', function(){ tip.classList.remove('show'); });
+  }
+
+  // ---- body composition ----
+  function loadBodyComp(){
+    healthApi.bodyCompList().then(function(entries){
+      var series = entries.slice(0, 30).filter(function(e){ return e.weight_kg != null; })
+        .reverse().map(function(e){ return {d: e.log_date, v: e.weight_kg}; });
+      drawHealthTrendChart('bcWeightChart', 'bcWeightTooltip', 'bcWeightChartWrap', series, ' kg', 'var(--accent)');
+      var list = document.getElementById('bcEntryList');
+      if(entries.length === 0){
+        list.innerHTML = '<div class="empty-note">No entries yet -- log a weigh-in on the right.</div>';
+        return;
+      }
+      list.innerHTML = entries.map(function(e){
+        var bits = [];
+        if(e.weight_kg != null) bits.push(e.weight_kg + ' kg');
+        if(e.body_fat_pct != null) bits.push(e.body_fat_pct + '% fat');
+        if(e.skeletal_muscle_kg != null) bits.push(e.skeletal_muscle_kg + ' kg muscle');
+        if(e.visceral_fat != null) bits.push('VF ' + e.visceral_fat);
+        if(e.bmr != null) bits.push(e.bmr + ' kcal BMR');
+        if(e.body_water_pct != null) bits.push(e.body_water_pct + '% water');
+        return '<div class="lab-row" style="cursor:default;"><span class="ltdate" style="width:auto; margin-right:8px;">'+e.log_date+'</span>' +
+          '<span class="ltname" style="font-weight:400;">'+(bits.join(' · ') || '--')+'</span></div>';
+      }).join('');
+    });
+  }
+  document.getElementById('bcSaveBtn').addEventListener('click', function(){
+    var val = function(id){ var v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
+    var body = {
+      weight_kg: val('bcWeight'), body_fat_pct: val('bcBodyFat'), skeletal_muscle_kg: val('bcMuscle'),
+      visceral_fat: val('bcVisceral'), bmr: val('bcBmr'), body_water_pct: val('bcWater'),
+    };
+    if(Object.values(body).every(function(v){ return v === null; })){ toast('Enter at least one value.'); return; }
+    healthApi.createBodyComp(body).then(function(){
+      toast('Entry saved.');
+      ['bcWeight','bcBodyFat','bcMuscle','bcVisceral','bcBmr','bcWater'].forEach(function(id){ document.getElementById(id).value = ''; });
+      loadBodyComp();
+    });
+  });
+
+  // ---- lab categories ----
+  function loadLabCategories(){
+    return healthApi.labCategories().then(function(cats){
+      healthState.labCategories = cats;
+      var list = document.getElementById('labCategoryList');
+      list.innerHTML = cats.map(function(c){
+        return '<div class="nutrient-row"><label><input type="checkbox" class="labcat-enabled" data-key="'+c.key+'" '+(c.enabled?'checked':'')+'><span>'+c.label+'</span></label></div>';
+      }).join('');
+      list.querySelectorAll('.labcat-enabled').forEach(function(cb){
+        cb.addEventListener('change', function(){
+          healthApi.updateLabCategory(cb.dataset.key, {enabled: cb.checked ? 1 : 0}).then(function(){ toast('Category updated.'); renderLabResults(); });
+        });
+      });
+      return cats;
+    });
+  }
+  document.getElementById('addLabCategoryBtn').addEventListener('click', function(){
+    var label = document.getElementById('newLabCategory').value.trim();
+    if(!label){ toast('Give the category a name first.'); return; }
+    healthApi.createLabCategory({key: label, label: label}).then(function(res){
+      if(!res.ok){ toast(res.data.error || 'Could not add category.'); return; }
+      toast(label + ' added.');
+      document.getElementById('newLabCategory').value = '';
+      loadLabCategories();
+    });
+  });
+
+  // ---- labs: upload -> extract -> confirm ----
+  var pendingLabFile = null;
+  var labUploadInput = document.getElementById('labUploadInput');
+  document.getElementById('labUploadBtn').addEventListener('click', function(){ labUploadInput.click(); });
+  labUploadInput.addEventListener('change', function(){
+    var file = labUploadInput.files[0];
+    if(!file) return;
+    pendingLabFile = file;
+    var box = document.getElementById('labDraftBox');
+    box.classList.add('show');
+    document.getElementById('labDraftRows').innerHTML = '<div class="miss loading-pulse">Reading report…</div>';
+    document.getElementById('labDraftNote').textContent = '';
+    healthApi.extractLabReport(file).then(function(draft){
+      renderLabDraft(draft);
+    });
+    labUploadInput.value = '';
+  });
+
+  function renderLabDraft(draft){
+    var rowsEl = document.getElementById('labDraftRows');
+    if(draft.error || !draft.tests || draft.tests.length === 0){
+      rowsEl.innerHTML = '<div class="miss">'+(draft.error || 'No tests found in this report.')+'</div>';
+      document.getElementById('labDraftNote').textContent = '';
+      return;
+    }
+    var catOptions = healthState.labCategories.map(function(c){ return '<option value="'+c.key+'">'+c.label+'</option>'; }).join('');
+    rowsEl.innerHTML = draft.tests.map(function(t, i){
+      return '<div class="lab-draft-row" data-idx="'+i+'">' +
+        '<input class="ldr-name" value="'+(t.test_name||'').replace(/"/g,'&quot;')+'">' +
+        '<select class="ldr-cat">'+catOptions+'</select>' +
+        '<input class="ldr-value" type="number" step="any" value="'+(t.value != null ? t.value : '')+'">' +
+        '<input class="ldr-unit" value="'+(t.unit||'')+'">' +
+        '<span class="flag-badge '+(t.flag||'normal')+'">'+(t.flag||'normal')+'</span>' +
+        '</div>';
+    }).join('');
+    rowsEl.querySelectorAll('.lab-draft-row').forEach(function(row){
+      var idx = parseInt(row.dataset.idx, 10);
+      row.querySelector('.ldr-cat').value = draft.tests[idx].category_key || 'other';
+    });
+    document.getElementById('labDraftNote').textContent = draft.notes || (draft.report_date ? 'Report date: ' + draft.report_date : '');
+    document.getElementById('labDraftBox').dataset.reportDate = draft.report_date || '';
+  }
+
+  document.getElementById('labConfirmBtn').addEventListener('click', function(){
+    if(!pendingLabFile){ toast('Upload a report first.'); return; }
+    var rows = document.querySelectorAll('#labDraftRows .lab-draft-row');
+    if(rows.length === 0){ toast('Nothing to save.'); return; }
+    var tests = Array.prototype.map.call(rows, function(row){
+      var value = row.querySelector('.ldr-value').value;
+      return {
+        test_name: row.querySelector('.ldr-name').value,
+        category_key: row.querySelector('.ldr-cat').value,
+        value: value === '' ? null : parseFloat(value),
+        unit: row.querySelector('.ldr-unit').value || null,
+        flag: row.querySelector('.flag-badge').textContent,
+      };
+    });
+    var reportDate = document.getElementById('labDraftBox').dataset.reportDate || null;
+    healthApi.confirmLabReport(pendingLabFile, tests, reportDate, pendingLabFile.name).then(function(){
+      toast('Lab report saved.');
+      document.getElementById('labDraftBox').classList.remove('show');
+      document.getElementById('labDraftRows').innerHTML = '';
+      pendingLabFile = null;
+      loadLabResults();
+    });
+  });
+
+  // ---- labs: grouped display + trend ----
+  function loadLabResults(){
+    healthApi.labResults().then(function(results){
+      healthState.labResults = results;
+      renderLabResults();
+    });
+  }
+  function renderLabResults(){
+    var groups = {};
+    healthState.labResults.forEach(function(r){
+      (groups[r.category_key] = groups[r.category_key] || []).push(r);
+    });
+    var enabledCats = healthState.labCategories.filter(function(c){ return c.enabled; });
+    var el = document.getElementById('labResultsGroups');
+    if(healthState.labResults.length === 0){
+      el.innerHTML = '<div class="empty-note">No lab results yet -- upload a report above.</div>';
+      return;
+    }
+    el.innerHTML = enabledCats.filter(function(c){ return groups[c.key] && groups[c.key].length; }).map(function(cat){
+      var seen = {};
+      var latest = groups[cat.key].filter(function(r){
+        if(seen[r.test_name]) return false;
+        seen[r.test_name] = true; return true;
+      });
+      return '<div class="lab-cat-group"><div class="lab-cat-title">'+cat.label+'</div>' +
+        latest.map(function(r){
+          return '<div class="lab-row" data-test="'+r.test_name.replace(/"/g,'&quot;')+'">' +
+            '<span class="ltname">'+r.test_name+'</span>' +
+            '<span class="ltval">'+(r.value != null ? r.value + (r.unit||'') : (r.ref_text||'--'))+'</span>' +
+            '<span class="flag-badge '+r.flag+'">'+r.flag+'</span>' +
+            '<span class="ltdate">'+r.test_date+'</span></div>';
+        }).join('') + '</div>';
+    }).join('');
+    el.querySelectorAll('.lab-row[data-test]').forEach(function(row){
+      row.addEventListener('click', function(){ showLabTrend(row.dataset.test); });
+    });
+  }
+  function showLabTrend(testName){
+    healthApi.labResultsFor(testName).then(function(results){
+      var series = results.slice().reverse().filter(function(r){ return r.value != null; })
+        .map(function(r){ return {d: r.test_date, v: r.value}; });
+      var last = results[0] || {};
+      document.getElementById('labTrendPanel').style.display = 'block';
+      document.getElementById('labTrendTitle').textContent = testName + (last.unit ? ' (' + last.unit + ')' : '');
+      drawHealthTrendChart('labTrendChart', 'labTrendTooltip', 'labTrendChartWrap', series, last.unit ? ' '+last.unit : '',
+        'var(--amber)', {low: last.ref_low, high: last.ref_high});
+    });
+  }
+
+  // ---- other documents ----
+  var docUploadInput = document.getElementById('docUploadInput');
+  document.getElementById('docUploadBtn').addEventListener('click', function(){ docUploadInput.click(); });
+  docUploadInput.addEventListener('change', function(){
+    var file = docUploadInput.files[0];
+    if(!file) return;
+    healthApi.uploadDocument(file).then(function(){ toast('Document saved.'); loadDocuments(); });
+    docUploadInput.value = '';
+  });
+  function loadDocuments(){
+    healthApi.documents().then(function(docs){
+      var el = document.getElementById('otherDocList');
+      if(docs.length === 0){ el.innerHTML = '<div class="empty-note">No other documents yet.</div>'; return; }
+      el.innerHTML = docs.map(function(d){
+        return '<div class="lab-row" style="cursor:default;"><span class="ltname">'+d.label+'</span><span class="ltdate" style="width:auto;">'+d.log_date+'</span></div>';
+      }).join('');
+    });
+  }
+
+  // ---- water ----
+  function updateWaterGlass(totalMl, targetMl){
+    var pct = Math.max(0, Math.min(1, targetMl ? totalMl / targetMl : 0));
+    var top = 8, bottom = 150; // matches the glass path's y-range
+    var fillY = bottom - (bottom - top) * pct;
+    var rect = document.getElementById('waterFillRect');
+    var wave = document.getElementById('waterWavePath');
+    rect.setAttribute('y', fillY);
+    rect.setAttribute('height', bottom - top + 10 - (fillY - top));
+    wave.setAttribute('d', 'M10 '+fillY+' q10 -6 20 0 t20 0 t20 0 t20 0 t20 0 v40 h-100 z');
+    document.getElementById('waterAmount').textContent = Math.round(totalMl) + ' ml';
+    document.getElementById('waterTargetLabel').textContent = 'of ' + Math.round(targetMl) + ' ml goal';
+  }
+  var WATER_TARGET_ML = 2500;
+  function loadWaterToday(){
+    healthApi.waterToday().then(function(data){
+      updateWaterGlass(data.total_ml, WATER_TARGET_ML);
+    });
+    healthApi.waterTrend(7).then(function(series){
+      drawHealthTrendChart('waterTrendChart', 'waterTrendTooltip', 'waterTrendChartWrap',
+        series.map(function(d){ return {d: d.date, v: d.ml}; }), ' ml', 'var(--accent)');
+    });
+  }
+  function logWaterAmount(ml){
+    healthApi.logWater(ml).then(function(res){
+      updateWaterGlass(res.total_ml, WATER_TARGET_ML);
+      toast('Logged ' + ml + 'ml of water.');
+      healthApi.waterTrend(7).then(function(series){
+        drawHealthTrendChart('waterTrendChart', 'waterTrendTooltip', 'waterTrendChartWrap',
+          series.map(function(d){ return {d: d.date, v: d.ml}; }), ' ml', 'var(--accent)');
+      });
+    });
+  }
+  document.getElementById('waterAdd250').addEventListener('click', function(){ logWaterAmount(250); });
+  document.getElementById('waterAdd500').addEventListener('click', function(){ logWaterAmount(500); });
+  document.getElementById('waterAddManual').addEventListener('click', function(){
+    var input = document.getElementById('waterManualMl');
+    var ml = parseFloat(input.value);
+    if(!ml || ml <= 0){ toast('Enter a valid amount.'); return; }
+    logWaterAmount(ml);
+    input.value = '';
+  });
+
+  // ---- lazy boot: only load Health data the first time its tab is opened ----
+  function healthBoot(){
+    if(healthState.booted) return;
+    healthState.booted = true;
+    loadBodyComp();
+    loadLabCategories().then(function(){ loadLabResults(); });
+    loadDocuments();
+    loadWaterToday();
+  }
+  document.querySelector('.navitem[data-screen="health"]').addEventListener('click', healthBoot);
 
   // ---------------- screens ----------------
   //
