@@ -499,12 +499,26 @@ def _day_tracking_tier(kcal_value, kcal_target):
 
 def build_day_summary(log_date):
     totals, meals = db.day_totals(log_date)
+    # Logged supplement doses count toward whichever nutrient they're
+    # linked to (e.g. a vitamin_d supplement adds to today's vitamin_d
+    # total) -- see health_db.day_supplement_nutrient_totals for the
+    # (deliberately unit-conversion-free) assumptions this makes. Kept as
+    # a lazy import: logging_service is nutrition-domain and shouldn't
+    # hard-depend on the health module importing cleanly to work at all.
+    try:
+        from core import health_db
+        supplement_totals = health_db.day_supplement_nutrient_totals(log_date)
+    except Exception:
+        supplement_totals = {}
+
     defs = db.list_nutrient_defs(enabled_only=True)
     nutrients = []
     kcal_value, kcal_target = 0, 0
     for d in defs:
         target = db.resolve_target(d)
-        value = round(totals.get(d["key"], 0), 1)
+        from_food = round(totals.get(d["key"], 0), 1)
+        from_supplements = round(supplement_totals.get(d["key"], 0), 1)
+        value = round(from_food + from_supplements, 1)
         if d["key"] == "kcal":
             kcal_value, kcal_target = value, target
         nutrients.append({
@@ -512,6 +526,7 @@ def build_day_summary(log_date):
             "category": d["category"], "direction": d["direction"],
             "value": value, "target": target,
             "pct": round(100 * value / target, 1) if target else None,
+            "from_supplements": from_supplements if from_supplements else None,
         })
     return {
         "date": log_date, "nutrients": nutrients, "meal_count": len(meals), "meals": meals,

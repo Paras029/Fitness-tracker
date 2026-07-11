@@ -84,6 +84,21 @@ def confirm_lab_report(draft, file_path, mime_type, label=None):
     return report_id
 
 
+def edit_lab_result(result_id, **fields):
+    """Recomputes the normal/low/high flag deterministically whenever the
+    value (or the reference range itself) changes, same rule as when a
+    report is first confirmed -- editing a value shouldn't leave a stale
+    flag behind."""
+    if "value" in fields or "ref_low" in fields or "ref_high" in fields:
+        current = next((r for r in health_db.list_lab_results() if r["id"] == result_id), None)
+        if current:
+            value = fields.get("value", current["value"])
+            ref_low = fields.get("ref_low", current["ref_low"])
+            ref_high = fields.get("ref_high", current["ref_high"])
+            fields["flag"] = _compute_flag(value, ref_low, ref_high)
+    health_db.update_lab_result(result_id, **fields)
+
+
 def log_water(ml, log_date=None):
     return health_db.create_water_log(ml, log_date=log_date)
 
@@ -109,6 +124,30 @@ def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None):
         return {"error": "Couldn't parse this scan -- check GEMINI_API_KEY / quota with "
                           "python -m scripts.check_setup, or try a clearer photo."}
     return extraction
+
+
+def get_lab_summary():
+    """On-demand narrative over the CURRENT set of lab results (latest
+    value per test, across all categories) -- no persistence, regenerated
+    fresh each time the user asks, since new reports may have been added
+    since the last summary."""
+    from core import gemini
+
+    results = health_db.list_lab_results()
+    if not results:
+        return {"error": "No lab results yet -- upload a report first."}
+    seen, latest = set(), []
+    for r in results:
+        if r["test_name"] in seen:
+            continue
+        seen.add(r["test_name"])
+        latest.append(r)
+
+    result = gemini.generate_lab_summary(latest)
+    if result is None:
+        return {"error": "Couldn't generate a summary -- check GEMINI_API_KEY / quota with "
+                          "python -m scripts.check_setup."}
+    return result
 
 
 def get_body_comp_summary(entry_id, history_count=6):

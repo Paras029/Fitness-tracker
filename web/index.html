@@ -442,9 +442,17 @@
   .modal-backdrop.show{ display:flex; }
   .modal{ background:var(--paper-raised); border-radius:12px; padding:20px 22px; width:320px; box-shadow:var(--shadow); border:1px solid var(--line); }
   .modal h3{ font-size:16px; margin-bottom:14px; }
-  .modal .field{ display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
-  .modal .field label{ font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:'IBM Plex Mono',monospace; }
-  .modal .field input{ border:1px solid var(--line-strong); border-radius:7px; padding:8px 10px; font-size:13.5px; background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; }
+  /* .field/.field-row are used both inside modals and directly on cards
+     (e.g. the Health screen's entry forms) -- unscoped so both get the
+     same styled input instead of the card version silently falling back
+     to the browser's unstyled default (the "white boxes" bug). */
+  .field{ display:flex; flex-direction:column; gap:4px; margin-bottom:10px; }
+  .field label{ font-size:11px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:'IBM Plex Mono',monospace; }
+  .field input, .field select{
+    width:100%; border:1px solid var(--line-strong); border-radius:7px; padding:8px 10px; font-size:13.5px;
+    background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace;
+  }
+  .field input:focus, .field select:focus{ outline:2px solid var(--accent); outline-offset:1px; border-color:transparent; }
   .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
   .modal.wide{ width:480px; max-height:82vh; overflow-y:auto; }
   .modal-section-label{ font-size:12px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.05em; font-family:'IBM Plex Mono',monospace; margin:16px 0 8px; padding-top:12px; border-top:1px solid var(--line); }
@@ -575,6 +583,40 @@
 
   .bc-summary-card{ padding:18px 20px; }
   .bc-summary-empty{ font-size:12.5px; color:var(--ink-faint); }
+
+  /* generic small icon button for edit/delete actions on list rows --
+     reused across body-comp entries, water logs, lab results, supplement
+     logs, rather than styling each row type separately. */
+  .icon-btn{
+    width:22px; height:22px; border:none; background:transparent; color:var(--ink-faint);
+    border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .icon-btn:hover{ background:var(--paper-sunk); color:var(--ink); }
+  .icon-btn.danger:hover{ color:var(--critical); }
+  .icon-btn svg{ width:12px; height:12px; }
+  .row-actions{ display:flex; gap:2px; flex:none; margin-left:auto; }
+  .inline-edit-input{
+    width:70px; border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px; font-size:12px;
+    background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:right;
+  }
+  .editing-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 10px; margin-bottom:10px;
+    background:var(--accent-soft); color:var(--accent); border-radius:7px; font-size:12px; font-weight:600;
+  }
+  .editing-banner button{ background:transparent; border:none; color:var(--accent); font-size:11.5px; cursor:pointer; text-decoration:underline; font-weight:600; }
+
+  /* supplements & medicine */
+  .supp-row{ display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .supp-row:last-child{ border-bottom:none; }
+  .supp-name{ font-weight:600; flex:1; min-width:0; }
+  .supp-dose{ font-size:11.5px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; }
+  .supp-cat-badge{
+    font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; text-transform:uppercase;
+    letter-spacing:.03em; font-family:'IBM Plex Mono',monospace; background:var(--paper-sunk); color:var(--ink-muted); flex:none;
+  }
+  .supp-log-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .supp-log-row:last-child{ border-bottom:none; }
+  .supp-log-time{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-faint); flex:none; width:56px; }
 </style>
 </head>
 <body>
@@ -941,7 +983,7 @@
             </div>
             <div class="card ledger-card">
               <h3 class="section-label">Results</h3>
-              <div class="section-sub">Grouped by category -- click a test to see its trend.</div>
+              <div class="section-sub">Grouped by category -- click a test to see its trend, edit or remove a result inline.</div>
               <div id="labResultsGroups" style="margin-top:12px;"></div>
               <div id="labTrendPanel" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
                 <div class="section-label" id="labTrendTitle" style="font-size:13.5px;"></div>
@@ -950,6 +992,13 @@
                   <div class="tooltip" id="labTrendTooltip"></div>
                 </div>
               </div>
+            </div>
+            <div class="card bc-summary-card">
+              <div class="trend-head">
+                <h3 class="section-label">AI summary</h3>
+                <button class="btn btn-ghost" id="labSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
+              </div>
+              <div id="labSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Upload a report, then generate a summary across your current results.</div></div>
             </div>
           </div>
           <div class="stack">
@@ -973,6 +1022,51 @@
         </div>
       </div>
 
+      <!-- ==================== Supplements & Medicine ==================== -->
+      <div class="health-section" id="healthSection-supplements">
+        <div class="health-section-head">
+          <h2>Supplements &amp; medicine</h2>
+          <div class="section-sub">Customizable -- link a supplement to a nutrient to credit it in Nutrition</div>
+        </div>
+        <div class="body-grid">
+          <div class="stack">
+            <div class="card ledger-card">
+              <h3 class="section-label">Your list</h3>
+              <div class="section-sub">Tap Log to record today's dose.</div>
+              <div id="suppList" style="margin-top:10px;"></div>
+            </div>
+            <div class="card ledger-card">
+              <h3 class="section-label">Today's log</h3>
+              <div id="suppLogList" style="margin-top:10px;"></div>
+            </div>
+          </div>
+          <div class="stack">
+            <div class="card quickadd-card">
+              <h3 class="section-label">Add a supplement or medicine</h3>
+              <div class="field" style="margin-top:12px;"><label>Name</label><input id="newSuppName" type="text" placeholder="e.g. Vitamin D3"></div>
+              <div class="field-row">
+                <div class="field"><label>Dose</label><input id="newSuppDose" type="number" step="any" placeholder="25"></div>
+                <div class="field"><label>Unit</label><input id="newSuppUnit" type="text" placeholder="mcg"></div>
+              </div>
+              <div class="field">
+                <label>Category</label>
+                <select id="newSuppCategory">
+                  <option value="vitamin">Vitamin</option>
+                  <option value="mineral">Mineral</option>
+                  <option value="medicine">Medicine</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Link to a nutrition target (optional)</label>
+                <select id="newSuppNutrient"><option value="">None</option></select>
+              </div>
+              <button class="btn btn-primary" id="addSuppBtn" style="margin-top:6px; width:100%; justify-content:center;">Add</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ==================== Water ==================== -->
       <div class="health-section" id="healthSection-water">
         <div class="health-section-head">
@@ -980,6 +1074,24 @@
           <div class="section-sub">Daily intake</div>
         </div>
         <div class="body-grid">
+          <div class="stack">
+            <div class="card trend-card">
+              <div class="trend-head">
+                <div>
+                  <div class="section-label">7-day intake</div>
+                  <div class="section-sub">Total ml logged per day</div>
+                </div>
+              </div>
+              <div class="chart-wrap" id="waterTrendChartWrap">
+                <svg id="waterTrendChart" viewBox="0 0 720 220"></svg>
+                <div class="tooltip" id="waterTrendTooltip"></div>
+              </div>
+            </div>
+            <div class="card ledger-card">
+              <h3 class="section-label">Today's logs</h3>
+              <div id="waterLogList" style="margin-top:10px;"></div>
+            </div>
+          </div>
           <div class="stack">
             <div class="card">
               <div class="water-glass-wrap">
@@ -1003,20 +1115,6 @@
                   <input type="number" id="waterManualMl" placeholder="custom ml">
                   <button class="btn btn-primary" id="waterAddManual">Log</button>
                 </div>
-              </div>
-            </div>
-          </div>
-          <div class="stack">
-            <div class="card trend-card">
-              <div class="trend-head">
-                <div>
-                  <div class="section-label">7-day intake</div>
-                  <div class="section-sub">Total ml logged per day</div>
-                </div>
-              </div>
-              <div class="chart-wrap" id="waterTrendChartWrap">
-                <svg id="waterTrendChart" viewBox="0 0 720 220"></svg>
-                <div class="tooltip" id="waterTrendTooltip"></div>
               </div>
             </div>
           </div>
@@ -2222,6 +2320,8 @@
       return fetch('/api/health/body-comp/extract', {method:'POST', body: fd}).then(r=>r.json());
     },
     bodyCompSummary: function(entryId){ return fetch('/api/health/body-comp/' + entryId + '/summary', {method:'POST'}).then(r=>r.json()); },
+    updateBodyComp: function(id, body){ return fetch('/api/health/body-comp/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteBodyComp: function(id){ return fetch('/api/health/body-comp/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labCategories: function(){ return fetch('/api/health/lab-categories').then(r=>r.json()); },
     createLabCategory: function(body){ return fetch('/api/health/lab-categories', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
     updateLabCategory: function(key, body){ return fetch('/api/health/lab-categories/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
@@ -2238,6 +2338,9 @@
     },
     labResults: function(){ return fetch('/api/health/labs').then(r=>r.json()); },
     labResultsFor: function(testName){ return fetch('/api/health/labs?test_name=' + encodeURIComponent(testName)).then(r=>r.json()); },
+    updateLabResult: function(id, body){ return fetch('/api/health/labs/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteLabResult: function(id){ return fetch('/api/health/labs/' + id, {method:'DELETE'}).then(r=>r.json()); },
+    labSummary: function(){ return fetch('/api/health/labs/summary', {method:'POST'}).then(r=>r.json()); },
     documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
     uploadDocument: function(file){
       var fd = new FormData(); fd.append('file', file);
@@ -2245,10 +2348,25 @@
     },
     waterToday: function(){ return fetch('/api/health/water').then(r=>r.json()); },
     logWater: function(ml){ return fetch('/api/health/water', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ml: ml})}).then(r=>r.json()); },
+    updateWater: function(id, ml){ return fetch('/api/health/water/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ml: ml})}).then(r=>r.json()); },
+    deleteWater: function(id){ return fetch('/api/health/water/' + id, {method:'DELETE'}).then(r=>r.json()); },
     waterTrend: function(days){ return fetch('/api/health/water?days=' + days).then(r=>r.json()); },
+    supplements: function(){ return fetch('/api/health/supplements').then(r=>r.json()); },
+    createSupplement: function(body){ return fetch('/api/health/supplements', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
+    updateSupplement: function(id, body){ return fetch('/api/health/supplements/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    deleteSupplement: function(id){ return fetch('/api/health/supplements/' + id, {method:'DELETE'}).then(r=>r.json()); },
+    logSupplement: function(id){ return fetch('/api/health/supplements/' + id + '/log', {method:'POST', headers:{'Content-Type':'application/json'}, body: '{}'}).then(r=>r.json()); },
+    supplementLogsToday: function(){ return fetch('/api/health/supplements/logs').then(r=>r.json()); },
+    deleteSupplementLog: function(id){ return fetch('/api/health/supplements/logs/' + id, {method:'DELETE'}).then(r=>r.json()); },
   };
 
-  var healthState = { booted: false, labCategories: [], labResults: [], bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null };
+  var TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>';
+  var EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  var healthState = {
+    booted: false, labCategories: [], labResults: [], bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null,
+    supplements: [], editingBcId: null, editingSuppId: null,
+  };
 
   // ---- generic trend chart (parameterized version of drawKcalChart, so
   // nutrition's chart code stays untouched but the same visual language
@@ -2333,11 +2451,24 @@
           if(e.visceral_fat != null) bits.push('VF <b>'+fmtNum(e.visceral_fat)+'</b>');
           if(e.bmr != null) bits.push('<b>'+fmtNum(e.bmr, 0)+' kcal</b> BMR');
           if(e.body_water_pct != null) bits.push('<b>'+fmtNum(e.body_water_pct)+'%</b> water');
-          return '<div class="bc-entry-row">' +
-            '<span class="bc-entry-date">'+e.log_date+'<span class="bc-entry-src">'+e.source+'</span></span>' +
-            '<span class="bc-entry-metrics">'+(bits.join(' &middot; ') || 'No metrics recorded')+'</span>' +
+          return '<div class="bc-entry-row" data-id="'+e.id+'">' +
+            '<span class="bc-entry-date">'+e.log_date+
+              '<span class="row-actions">' +
+                '<button class="icon-btn bc-edit-btn" data-id="'+e.id+'" aria-label="Edit entry">'+EDIT_ICON+'</button>' +
+                '<button class="icon-btn danger bc-del-btn" data-id="'+e.id+'" aria-label="Delete entry">'+TRASH_ICON+'</button>' +
+              '</span>' +
+            '</span>' +
+            '<span class="bc-entry-metrics">'+(bits.join(' &middot; ') || 'No metrics recorded')+' <span class="bc-entry-src">'+e.source+'</span></span>' +
             '</div>';
         }).join('');
+        list.querySelectorAll('.bc-edit-btn').forEach(function(btn){
+          btn.addEventListener('click', function(){ startEditBodyComp(parseInt(btn.dataset.id, 10)); });
+        });
+        list.querySelectorAll('.bc-del-btn').forEach(function(btn){
+          btn.addEventListener('click', function(){
+            healthApi.deleteBodyComp(parseInt(btn.dataset.id, 10)).then(function(){ toast('Entry deleted.'); loadBodyComp(); });
+          });
+        });
       }
 
       renderBodySegmentPanel();
@@ -2350,6 +2481,32 @@
     return healthState.bodyCompEntries.find(function(e){ return e.segments; }) || null;
   }
 
+  function startEditBodyComp(id){
+    var entry = healthState.bodyCompEntries.find(function(e){ return e.id === id; });
+    if(!entry) return;
+    healthState.editingBcId = id;
+    document.getElementById('bcWeight').value = entry.weight_kg != null ? entry.weight_kg : '';
+    document.getElementById('bcBodyFat').value = entry.body_fat_pct != null ? entry.body_fat_pct : '';
+    document.getElementById('bcMuscle').value = entry.skeletal_muscle_kg != null ? entry.skeletal_muscle_kg : '';
+    document.getElementById('bcVisceral').value = entry.visceral_fat != null ? entry.visceral_fat : '';
+    document.getElementById('bcBmr').value = entry.bmr != null ? entry.bmr : '';
+    document.getElementById('bcWater').value = entry.body_water_pct != null ? entry.body_water_pct : '';
+    pendingBcSegments = entry.segments || null;
+    document.getElementById('bcSaveBtn').textContent = 'Update entry';
+    var note = document.getElementById('bcUploadNote');
+    note.innerHTML = 'Editing the ' + entry.log_date + ' entry -- <a href="#" id="bcCancelEdit" style="color:var(--accent);">cancel</a>';
+    document.getElementById('bcCancelEdit').addEventListener('click', function(ev){ ev.preventDefault(); cancelEditBodyComp(); });
+    document.getElementById('bcWeight').scrollIntoView({behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center'});
+  }
+
+  function cancelEditBodyComp(){
+    healthState.editingBcId = null;
+    pendingBcSegments = null; pendingBcSource = 'manual';
+    BC_FIELD_IDS.forEach(function(id){ document.getElementById(id).value = ''; });
+    document.getElementById('bcSaveBtn').textContent = 'Save entry';
+    document.getElementById('bcUploadNote').textContent = '';
+  }
+
   function saveBodyComp(){
     var val = function(id){ var v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
     var body = {
@@ -2360,11 +2517,11 @@
     if(Object.keys(body).every(function(k){ return k==='source'||k==='segments'||body[k]===null; })){
       toast('Enter at least one value.'); return;
     }
-    healthApi.createBodyComp(body).then(function(){
-      toast('Entry saved.');
-      BC_FIELD_IDS.forEach(function(id){ document.getElementById(id).value = ''; });
-      pendingBcSegments = null; pendingBcSource = 'manual';
-      document.getElementById('bcUploadNote').textContent = '';
+    var isEdit = healthState.editingBcId != null;
+    var req = isEdit ? healthApi.updateBodyComp(healthState.editingBcId, body) : healthApi.createBodyComp(body);
+    req.then(function(){
+      toast(isEdit ? 'Entry updated.' : 'Entry saved.');
+      cancelEditBodyComp();
       loadBodyComp();
     });
   }
@@ -2614,16 +2771,54 @@
       });
       return '<div class="lab-cat-group"><div class="lab-cat-title">'+cat.label+'</div>' +
         latest.map(function(r){
-          return '<div class="lab-row" data-test="'+r.test_name.replace(/"/g,'&quot;')+'">' +
+          return '<div class="lab-row" data-test="'+r.test_name.replace(/"/g,'&quot;')+'" data-id="'+r.id+'">' +
             '<span class="ltname">'+r.test_name+'</span>' +
-            '<span class="ltval">'+(r.value != null ? r.value + (r.unit||'') : (r.ref_text||'--'))+'</span>' +
+            '<span class="ltval" data-id="'+r.id+'">'+(r.value != null ? r.value + (r.unit||'') : (r.ref_text||'--'))+'</span>' +
             '<span class="flag-badge '+r.flag+'">'+r.flag+'</span>' +
-            '<span class="ltdate">'+r.test_date+'</span></div>';
+            '<span class="ltdate">'+r.test_date+'</span>' +
+            '<span class="row-actions">' +
+              '<button class="icon-btn lab-edit-btn" data-id="'+r.id+'" aria-label="Edit value">'+EDIT_ICON+'</button>' +
+              '<button class="icon-btn danger lab-del-btn" data-id="'+r.id+'" aria-label="Delete result">'+TRASH_ICON+'</button>' +
+            '</span>' +
+            '</div>';
         }).join('') + '</div>';
     }).join('');
     el.querySelectorAll('.lab-row[data-test]').forEach(function(row){
-      row.addEventListener('click', function(){ showLabTrend(row.dataset.test); });
+      row.addEventListener('click', function(e){
+        if(e.target.closest('.row-actions')) return;
+        showLabTrend(row.dataset.test);
+      });
     });
+    el.querySelectorAll('.lab-edit-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        startEditLabResult(parseInt(btn.dataset.id, 10));
+      });
+    });
+    el.querySelectorAll('.lab-del-btn').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        healthApi.deleteLabResult(parseInt(btn.dataset.id, 10)).then(function(){ toast('Result deleted.'); loadLabResults(); });
+      });
+    });
+  }
+  function startEditLabResult(id){
+    var row = document.querySelector('.ltval[data-id="'+id+'"]');
+    if(!row || row.querySelector('input')) return;
+    var result = healthState.labResults.find(function(r){ return r.id === id; });
+    var current = result ? result.value : null;
+    row.innerHTML = '<input type="number" step="any" class="inline-edit-input" value="'+(current != null ? current : '')+'">';
+    var input = row.querySelector('input');
+    input.focus(); input.select();
+    function commit(){
+      var v = input.value === '' ? null : parseFloat(input.value);
+      healthApi.updateLabResult(id, {value: v}).then(function(){ toast('Result updated.'); loadLabResults(); });
+    }
+    input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter') commit();
+      if(e.key === 'Escape') renderLabResults();
+    });
+    input.addEventListener('blur', commit);
   }
   function showLabTrend(testName){
     healthApi.labResultsFor(testName).then(function(results){
@@ -2636,6 +2831,21 @@
         'var(--amber)', {low: last.ref_low, high: last.ref_high});
     });
   }
+
+  document.getElementById('labSummaryBtn').addEventListener('click', function(){
+    var btn = document.getElementById('labSummaryBtn');
+    var body = document.getElementById('labSummaryBody');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    healthApi.labSummary().then(function(res){
+      btn.disabled = false; btn.textContent = 'Generate summary';
+      if(res.error){ body.innerHTML = '<div class="bc-summary-empty">'+res.error+'</div>'; return; }
+      var highlights = (res.highlights || []).map(function(h){ return '<li>'+h+'</li>'; }).join('');
+      body.innerHTML = '<div class="insight-body">'+res.summary+
+        (highlights ? '<ul class="dr-tips">'+highlights+'</ul>' : '') +
+        (res.watch ? '<div class="insight-watch">'+res.watch+'</div>' : '') +
+        '</div>';
+    });
+  });
 
   // ---- other documents ----
   var docUploadInput = document.getElementById('docUploadInput');
@@ -2670,9 +2880,61 @@
     document.getElementById('waterTargetLabel').textContent = 'of ' + Math.round(targetMl) + ' ml goal';
   }
   var WATER_TARGET_ML = 2500;
+  function renderWaterLogList(logs){
+    var el = document.getElementById('waterLogList');
+    if(!logs || logs.length === 0){
+      el.innerHTML = '<div class="empty-note">Nothing logged yet today.</div>';
+      return;
+    }
+    el.innerHTML = logs.slice().reverse().map(function(l){
+      var time = (l.logged_at || '').slice(11, 16);
+      return '<div class="bc-entry-row" data-id="'+l.id+'">' +
+        '<span class="bc-entry-metrics">'+time+' <span class="water-log-val" data-id="'+l.id+'"><b>'+Math.round(l.ml)+' ml</b></span>' +
+          '<span class="row-actions">' +
+            '<button class="icon-btn water-edit-btn" data-id="'+l.id+'" aria-label="Edit amount">'+EDIT_ICON+'</button>' +
+            '<button class="icon-btn danger water-del-btn" data-id="'+l.id+'" aria-label="Delete log">'+TRASH_ICON+'</button>' +
+          '</span>' +
+        '</span></div>';
+    }).join('');
+    el.querySelectorAll('.water-edit-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){ startEditWaterLog(parseInt(btn.dataset.id, 10)); });
+    });
+    el.querySelectorAll('.water-del-btn').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        healthApi.deleteWater(parseInt(btn.dataset.id, 10)).then(function(res){
+          updateWaterGlass(res.total_ml, WATER_TARGET_ML);
+          toast('Log deleted.');
+          loadWaterToday();
+        });
+      });
+    });
+  }
+  function startEditWaterLog(id){
+    var span = document.querySelector('.water-log-val[data-id="'+id+'"]');
+    if(!span || span.querySelector('input')) return;
+    var current = span.textContent.trim().replace(/[^\d.]/g, '');
+    span.innerHTML = '<input type="number" step="any" class="inline-edit-input" value="'+current+'">';
+    var input = span.querySelector('input');
+    input.focus(); input.select();
+    function commit(){
+      var v = parseFloat(input.value);
+      if(!v || v <= 0){ loadWaterToday(); return; }
+      healthApi.updateWater(id, v).then(function(res){
+        updateWaterGlass(res.total_ml, WATER_TARGET_ML);
+        toast('Log updated.');
+        loadWaterToday();
+      });
+    }
+    input.addEventListener('keydown', function(e){
+      if(e.key === 'Enter') commit();
+      if(e.key === 'Escape') loadWaterToday();
+    });
+    input.addEventListener('blur', commit);
+  }
   function loadWaterToday(){
     healthApi.waterToday().then(function(data){
       updateWaterGlass(data.total_ml, WATER_TARGET_ML);
+      renderWaterLogList(data.logs);
     });
     healthApi.waterTrend(7).then(function(series){
       drawHealthTrendChart('waterTrendChart', 'waterTrendTooltip', 'waterTrendChartWrap',
@@ -2683,10 +2945,7 @@
     healthApi.logWater(ml).then(function(res){
       updateWaterGlass(res.total_ml, WATER_TARGET_ML);
       toast('Logged ' + ml + 'ml of water.');
-      healthApi.waterTrend(7).then(function(series){
-        drawHealthTrendChart('waterTrendChart', 'waterTrendTooltip', 'waterTrendChartWrap',
-          series.map(function(d){ return {d: d.date, v: d.ml}; }), ' ml', 'var(--accent)');
-      });
+      loadWaterToday();
     });
   }
   document.getElementById('waterAdd250').addEventListener('click', function(){ logWaterAmount(250); });
@@ -2700,6 +2959,124 @@
   });
 
   // ---- lazy boot: only load Health data the first time its tab is opened ----
+  // ---- supplements & medicine ----
+  var SUPP_CATEGORY_LABEL = {vitamin: 'Vitamin', mineral: 'Mineral', medicine: 'Medicine', other: 'Other'};
+
+  function loadSuppNutrientOptions(){
+    var sel = document.getElementById('newSuppNutrient');
+    api.nutrientDefs().then(function(defs){
+      sel.innerHTML = '<option value="">None</option>' + defs.map(function(d){
+        return '<option value="'+d.key+'">'+d.label+' ('+d.unit+')</option>';
+      }).join('');
+    });
+  }
+
+  function loadSupplements(){
+    return healthApi.supplements().then(function(supps){
+      healthState.supplements = supps;
+      var el = document.getElementById('suppList');
+      if(supps.length === 0){
+        el.innerHTML = '<div class="empty-note">Nothing added yet -- add a supplement or medicine on the right.</div>';
+        return;
+      }
+      el.innerHTML = supps.map(function(s){
+        var dose = (s.dose_amount != null ? fmtNum(s.dose_amount) + (s.dose_unit || '') : '');
+        var link = s.linked_nutrient_key ? ' &middot; credits ' + s.linked_nutrient_key : '';
+        return '<div class="supp-row" data-id="'+s.id+'">' +
+          '<span class="supp-cat-badge">'+(SUPP_CATEGORY_LABEL[s.category] || s.category)+'</span>' +
+          '<span class="supp-name">'+s.name+'<div class="supp-dose">'+dose+link+'</div></span>' +
+          '<button class="btn btn-ghost supp-log-btn" data-id="'+s.id+'" style="padding:5px 10px; font-size:11.5px;">Log</button>' +
+          '<span class="row-actions">' +
+            '<button class="icon-btn supp-edit-btn" data-id="'+s.id+'" aria-label="Edit supplement">'+EDIT_ICON+'</button>' +
+            '<button class="icon-btn danger supp-del-btn" data-id="'+s.id+'" aria-label="Delete supplement">'+TRASH_ICON+'</button>' +
+          '</span>' +
+          '</div>';
+      }).join('');
+      el.querySelectorAll('.supp-log-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          healthApi.logSupplement(parseInt(btn.dataset.id, 10)).then(function(){ toast('Logged.'); loadSupplementLogs(); });
+        });
+      });
+      el.querySelectorAll('.supp-edit-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){ startEditSupplement(parseInt(btn.dataset.id, 10)); });
+      });
+      el.querySelectorAll('.supp-del-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          healthApi.deleteSupplement(parseInt(btn.dataset.id, 10)).then(function(){ toast('Deleted.'); loadSupplements(); loadSupplementLogs(); });
+        });
+      });
+    });
+  }
+
+  function loadSupplementLogs(){
+    healthApi.supplementLogsToday().then(function(logs){
+      var el = document.getElementById('suppLogList');
+      if(logs.length === 0){
+        el.innerHTML = '<div class="empty-note">Nothing logged yet today.</div>';
+        return;
+      }
+      el.innerHTML = logs.map(function(l){
+        var supp = healthState.supplements.find(function(s){ return s.id === l.supplement_id; });
+        var name = supp ? supp.name : ('#' + l.supplement_id);
+        var dose = l.dose_amount != null ? fmtNum(l.dose_amount) + (supp ? (supp.dose_unit || '') : '') : '';
+        var time = (l.logged_at || '').slice(11, 16);
+        return '<div class="supp-log-row" data-id="'+l.id+'">' +
+          '<span class="supp-log-time">'+time+'</span>' +
+          '<span style="flex:1;">'+name+(dose ? ' -- <b class="num">'+dose+'</b>' : '')+'</span>' +
+          '<span class="row-actions"><button class="icon-btn danger supp-log-del-btn" data-id="'+l.id+'" aria-label="Delete log">'+TRASH_ICON+'</button></span>' +
+          '</div>';
+      }).join('');
+      el.querySelectorAll('.supp-log-del-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          healthApi.deleteSupplementLog(parseInt(btn.dataset.id, 10)).then(function(){ toast('Log deleted.'); loadSupplementLogs(); });
+        });
+      });
+    });
+  }
+
+  function startEditSupplement(id){
+    var s = healthState.supplements.find(function(x){ return x.id === id; });
+    if(!s) return;
+    healthState.editingSuppId = id;
+    document.getElementById('newSuppName').value = s.name;
+    document.getElementById('newSuppDose').value = s.dose_amount != null ? s.dose_amount : '';
+    document.getElementById('newSuppUnit').value = s.dose_unit || '';
+    document.getElementById('newSuppCategory').value = s.category;
+    document.getElementById('newSuppNutrient').value = s.linked_nutrient_key || '';
+    document.getElementById('addSuppBtn').textContent = 'Update';
+    document.getElementById('newSuppName').scrollIntoView({behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center'});
+  }
+
+  function resetSuppForm(){
+    healthState.editingSuppId = null;
+    document.getElementById('newSuppName').value = '';
+    document.getElementById('newSuppDose').value = '';
+    document.getElementById('newSuppUnit').value = '';
+    document.getElementById('newSuppCategory').value = 'vitamin';
+    document.getElementById('newSuppNutrient').value = '';
+    document.getElementById('addSuppBtn').textContent = 'Add';
+  }
+
+  document.getElementById('addSuppBtn').addEventListener('click', function(){
+    var name = document.getElementById('newSuppName').value.trim();
+    if(!name){ toast('Give it a name first.'); return; }
+    var body = {
+      name: name,
+      dose_amount: document.getElementById('newSuppDose').value === '' ? null : parseFloat(document.getElementById('newSuppDose').value),
+      dose_unit: document.getElementById('newSuppUnit').value.trim() || null,
+      category: document.getElementById('newSuppCategory').value,
+      linked_nutrient_key: document.getElementById('newSuppNutrient').value || null,
+    };
+    var isEdit = healthState.editingSuppId != null;
+    var req = isEdit ? healthApi.updateSupplement(healthState.editingSuppId, body) : healthApi.createSupplement(body);
+    req.then(function(res){
+      if(res && res.ok === false){ toast(res.data.error || 'Could not save.'); return; }
+      toast(isEdit ? 'Updated.' : name + ' added.');
+      resetSuppForm();
+      loadSupplements();
+    });
+  });
+
   function healthBoot(){
     if(healthState.booted) return;
     healthState.booted = true;
@@ -2707,6 +3084,8 @@
     loadLabCategories().then(function(){ loadLabResults(); });
     loadDocuments();
     loadWaterToday();
+    loadSuppNutrientOptions();
+    loadSupplements().then(function(){ loadSupplementLogs(); });
   }
   document.querySelector('.navitem[data-screen="health"]').addEventListener('click', healthBoot);
 

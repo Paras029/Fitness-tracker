@@ -68,6 +68,19 @@ def body_comp_summary(entry_id):
     return jsonify(result)
 
 
+@health_bp.route("/body-comp/<int:entry_id>", methods=["PUT"])
+def put_body_comp(entry_id):
+    body = request.get_json(force=True)
+    health_db.update_body_comp_entry(entry_id, **body)
+    return jsonify({"ok": True})
+
+
+@health_bp.route("/body-comp/<int:entry_id>", methods=["DELETE"])
+def delete_body_comp(entry_id):
+    health_db.delete_body_comp_entry(entry_id)
+    return jsonify({"ok": True})
+
+
 # ---------------- lab categories ----------------
 
 @health_bp.route("/lab-categories", methods=["GET"])
@@ -134,9 +147,33 @@ def get_labs():
     return jsonify(health_db.list_lab_results(test_name=test_name, category_key=category))
 
 
+@health_bp.route("/labs/summary", methods=["POST"])
+def labs_summary():
+    return jsonify(health_service.get_lab_summary())
+
+
+@health_bp.route("/labs/<int:result_id>", methods=["PUT"])
+def put_lab_result(result_id):
+    body = request.get_json(force=True)
+    health_service.edit_lab_result(result_id, **body)
+    return jsonify({"ok": True})
+
+
+@health_bp.route("/labs/<int:result_id>", methods=["DELETE"])
+def delete_lab_result(result_id):
+    health_db.delete_lab_result(result_id)
+    return jsonify({"ok": True})
+
+
 @health_bp.route("/labs/reports", methods=["GET"])
 def get_lab_reports():
     return jsonify(health_db.list_lab_reports())
+
+
+@health_bp.route("/labs/reports/<int:report_id>", methods=["DELETE"])
+def delete_lab_report_route(report_id):
+    health_db.delete_lab_report(report_id)
+    return jsonify({"ok": True})
 
 
 # ---------------- other documents ----------------
@@ -176,3 +213,77 @@ def post_water():
     log_id = health_service.log_water(body["ml"], log_date=body.get("log_date"))
     log_date = body.get("log_date") or db.today_str()
     return jsonify({"id": log_id, "total_ml": health_db.day_water_total(log_date)})
+
+
+@health_bp.route("/water/<int:log_id>", methods=["PUT"])
+def put_water(log_id):
+    body = request.get_json(force=True)
+    health_db.update_water_log(log_id, body["ml"])
+    return jsonify({"ok": True, "total_ml": health_db.day_water_total()})
+
+
+@health_bp.route("/water/<int:log_id>", methods=["DELETE"])
+def delete_water(log_id):
+    health_db.delete_water_log(log_id)
+    return jsonify({"ok": True, "total_ml": health_db.day_water_total()})
+
+
+# ---------------- supplements & medicine ----------------
+
+@health_bp.route("/supplements", methods=["GET"])
+def get_supplements():
+    return jsonify(health_db.list_supplements())
+
+
+@health_bp.route("/supplements", methods=["POST"])
+def post_supplement():
+    body = request.get_json(force=True)
+    try:
+        supp_id = health_db.create_supplement(
+            name=body["name"], dose_amount=body.get("dose_amount"), dose_unit=body.get("dose_unit"),
+            category=body.get("category", "other"), linked_nutrient_key=body.get("linked_nutrient_key"),
+        )
+    except (KeyError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"id": supp_id})
+
+
+@health_bp.route("/supplements/<int:supplement_id>", methods=["PUT"])
+def put_supplement(supplement_id):
+    body = request.get_json(force=True)
+    health_db.update_supplement(supplement_id, **body)
+    return jsonify({"ok": True})
+
+
+@health_bp.route("/supplements/<int:supplement_id>", methods=["DELETE"])
+def delete_supplement_route(supplement_id):
+    health_db.delete_supplement(supplement_id)
+    return jsonify({"ok": True})
+
+
+@health_bp.route("/supplements/<int:supplement_id>/log", methods=["POST"])
+def post_supplement_log(supplement_id):
+    body = request.get_json(force=True) or {}
+    log_id = health_db.log_supplement_dose(
+        supplement_id, dose_amount=body.get("dose_amount"), log_date=body.get("log_date"), note=body.get("note"),
+    )
+    return jsonify({"id": log_id})
+
+
+@health_bp.route("/supplements/logs", methods=["GET"])
+def get_supplement_logs():
+    log_date = request.args.get("date") or db.today_str()
+    return jsonify(health_db.list_supplement_logs(log_date=log_date))
+
+
+@health_bp.route("/supplements/logs/<int:log_id>", methods=["PUT"])
+def put_supplement_log(log_id):
+    body = request.get_json(force=True)
+    health_db.update_supplement_log(log_id, body["dose_amount"])
+    return jsonify({"ok": True})
+
+
+@health_bp.route("/supplements/logs/<int:log_id>", methods=["DELETE"])
+def delete_supplement_log_route(log_id):
+    health_db.delete_supplement_log(log_id)
+    return jsonify({"ok": True})

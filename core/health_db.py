@@ -81,6 +81,28 @@ CREATE TABLE IF NOT EXISTS water_logs (
     ml REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_water_logs_date ON water_logs(log_date);
+
+CREATE TABLE IF NOT EXISTS supplements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    dose_amount REAL,
+    dose_unit TEXT,
+    category TEXT NOT NULL DEFAULT 'other',   -- vitamin | mineral | medicine | other
+    linked_nutrient_key TEXT,                 -- optional: nutrient_defs.key this dose counts toward
+    enabled INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS supplement_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplement_id INTEGER NOT NULL REFERENCES supplements(id) ON DELETE CASCADE,
+    log_date TEXT NOT NULL,
+    logged_at TEXT NOT NULL,
+    dose_amount REAL,
+    note TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_supplement_logs_date ON supplement_logs(log_date);
+CREATE INDEX IF NOT EXISTS idx_supplement_logs_supplement ON supplement_logs(supplement_id);
 """
 
 DEFAULT_LAB_CATEGORIES = [
@@ -179,6 +201,28 @@ def set_body_comp_summary(entry_id, score, summary, highlights, watch):
         )
 
 
+_BODY_COMP_EDITABLE = {
+    "weight_kg", "body_fat_pct", "skeletal_muscle_kg", "visceral_fat",
+    "bmr", "body_water_pct", "note", "log_date", "segments",
+}
+
+
+def update_body_comp_entry(entry_id, **fields):
+    sets = {k: v for k, v in fields.items() if k in _BODY_COMP_EDITABLE}
+    if not sets:
+        return
+    if "segments" in sets:
+        sets["segments_json"] = json.dumps(sets.pop("segments")) if sets["segments"] else None
+    with db.get_conn() as conn:
+        cols = ", ".join(f"{k}=?" for k in sets)
+        conn.execute(f"UPDATE body_comp_entries SET {cols} WHERE id=?", (*sets.values(), entry_id))
+
+
+def delete_body_comp_entry(entry_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM body_comp_entries WHERE id=?", (entry_id,))
+
+
 # ---------------- lab categories (mirrors db.py's nutrient_defs) ----------------
 
 def list_lab_categories(enabled_only=False):
@@ -248,6 +292,11 @@ def list_lab_reports():
         return [dict(row) for row in conn.execute("SELECT * FROM lab_reports ORDER BY uploaded_at DESC")]
 
 
+def delete_lab_report(report_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM lab_reports WHERE id=?", (report_id,))  # cascades to lab_results
+
+
 def list_lab_results(test_name=None, category_key=None):
     q = "SELECT * FROM lab_results"
     clauses, params = [], []
@@ -262,6 +311,23 @@ def list_lab_results(test_name=None, category_key=None):
     q += " ORDER BY test_date DESC, id DESC"
     with db.get_conn() as conn:
         return [dict(row) for row in conn.execute(q, params)]
+
+
+_LAB_RESULT_EDITABLE = {"test_name", "category_key", "value", "unit", "ref_low", "ref_high", "ref_text", "flag", "test_date"}
+
+
+def update_lab_result(result_id, **fields):
+    sets = {k: v for k, v in fields.items() if k in _LAB_RESULT_EDITABLE}
+    if not sets:
+        return
+    with db.get_conn() as conn:
+        cols = ", ".join(f"{k}=?" for k in sets)
+        conn.execute(f"UPDATE lab_results SET {cols} WHERE id=?", (*sets.values(), result_id))
+
+
+def delete_lab_result(result_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM lab_results WHERE id=?", (result_id,))
 
 
 # ---------------- other documents ----------------
@@ -303,6 +369,16 @@ def list_water_logs(log_date=None):
         return [dict(row) for row in rows]
 
 
+def update_water_log(log_id, ml):
+    with db.get_conn() as conn:
+        conn.execute("UPDATE water_logs SET ml=? WHERE id=?", (ml, log_id))
+
+
+def delete_water_log(log_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM water_logs WHERE id=?", (log_id,))
+
+
 def day_water_total(log_date=None):
     log_date = log_date or db.today_str()
     with db.get_conn() as conn:
@@ -331,3 +407,111 @@ def water_trend(days=7, end_date=None):
          "ml": by_date.get((start_dt + timedelta(days=i)).strftime("%Y-%m-%d"), 0)}
         for i in range(days)
     ]
+
+
+# ---------------- supplements & medicine (mirrors nutrient_defs for the
+# definitions; supplement_logs mirrors water_logs for the intake events) ----
+
+def list_supplements(enabled_only=False):
+    q = "SELECT * FROM supplements"
+    if enabled_only:
+        q += " WHERE enabled=1"
+    q += " ORDER BY sort_order"
+    with db.get_conn() as conn:
+        return [dict(row) for row in conn.execute(q)]
+
+
+def create_supplement(name, dose_amount=None, dose_unit=None, category="other",
+                       linked_nutrient_key=None, sort_order=None):
+    name = name.strip()
+    if not name:
+        raise ValueError("supplement name cannot be empty")
+    with db.get_conn() as conn:
+        if sort_order is None:
+            row = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM supplements").fetchone()
+            sort_order = row["n"]
+        cur = conn.execute(
+            "INSERT INTO supplements (name, dose_amount, dose_unit, category, linked_nutrient_key, "
+            "enabled, sort_order) VALUES (?,?,?,?,?,1,?)",
+            (name, dose_amount, dose_unit, category, linked_nutrient_key, sort_order),
+        )
+        return cur.lastrowid
+
+
+_SUPPLEMENT_EDITABLE = {"name", "dose_amount", "dose_unit", "category", "linked_nutrient_key", "enabled", "sort_order"}
+
+
+def update_supplement(supplement_id, **fields):
+    sets = {k: v for k, v in fields.items() if k in _SUPPLEMENT_EDITABLE}
+    if not sets:
+        return
+    with db.get_conn() as conn:
+        cols = ", ".join(f"{k}=?" for k in sets)
+        conn.execute(f"UPDATE supplements SET {cols} WHERE id=?", (*sets.values(), supplement_id))
+
+
+def delete_supplement(supplement_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM supplements WHERE id=?", (supplement_id,))  # cascades to supplement_logs
+
+
+def log_supplement_dose(supplement_id, dose_amount=None, log_date=None, note=None):
+    """Snapshots the supplement's current default dose onto the log row if
+    no explicit amount is given, rather than leaving it null and resolving
+    it at read time -- so a later change to the definition's default dose
+    doesn't retroactively change what past logs are recorded as."""
+    date = log_date or db.today_str()
+    with db.get_conn() as conn:
+        if dose_amount is None:
+            row = conn.execute("SELECT dose_amount FROM supplements WHERE id=?", (supplement_id,)).fetchone()
+            dose_amount = row["dose_amount"] if row else None
+        cur = conn.execute(
+            "INSERT INTO supplement_logs (supplement_id, log_date, logged_at, dose_amount, note) "
+            "VALUES (?,?,?,?,?)",
+            (supplement_id, date, db.now_iso(), dose_amount, note),
+        )
+        return cur.lastrowid
+
+
+def list_supplement_logs(log_date=None, supplement_id=None):
+    q = "SELECT * FROM supplement_logs"
+    clauses, params = [], []
+    if log_date:
+        clauses.append("log_date=?")
+        params.append(log_date)
+    if supplement_id:
+        clauses.append("supplement_id=?")
+        params.append(supplement_id)
+    if clauses:
+        q += " WHERE " + " AND ".join(clauses)
+    q += " ORDER BY logged_at DESC"
+    with db.get_conn() as conn:
+        return [dict(row) for row in conn.execute(q, params)]
+
+
+def update_supplement_log(log_id, dose_amount):
+    with db.get_conn() as conn:
+        conn.execute("UPDATE supplement_logs SET dose_amount=? WHERE id=?", (dose_amount, log_id))
+
+
+def delete_supplement_log(log_id):
+    with db.get_conn() as conn:
+        conn.execute("DELETE FROM supplement_logs WHERE id=?", (log_id,))
+
+
+def day_supplement_nutrient_totals(log_date=None):
+    """Sums logged supplement doses for that day, per linked nutrient key --
+    e.g. a vitamin_d-linked supplement logged twice today with dose_amount=25
+    each contributes 50 toward the vitamin_d total. Assumes dose_unit matches
+    the nutrient's unit (no conversion attempted -- if they don't match, the
+    supplement's contribution will be wrong until the user fixes the unit,
+    same as any other manual-entry mismatch in this app)."""
+    date = log_date or db.today_str()
+    with db.get_conn() as conn:
+        rows = conn.execute(
+            "SELECT s.linked_nutrient_key AS key, SUM(COALESCE(l.dose_amount, s.dose_amount, 0)) AS total "
+            "FROM supplement_logs l JOIN supplements s ON s.id = l.supplement_id "
+            "WHERE l.log_date=? AND s.linked_nutrient_key IS NOT NULL "
+            "GROUP BY s.linked_nutrient_key", (date,),
+        ).fetchall()
+        return {r["key"]: r["total"] for r in rows}

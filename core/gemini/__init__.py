@@ -48,6 +48,12 @@
                                           using recent history for trend
                                           framing if given.
 
+  lab_summary.py                         ON-DEMAND only: narrative
+    generate_lab_summary()               summary of current lab results
+                                          across all categories -- no
+                                          synthetic score, the reference-
+                                          range flag is authority enough.
+
   common.py                              Nutrient-key constants and
                                           schema helpers shared by fill.py
                                           and review.py.
@@ -64,6 +70,7 @@ from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
 from core.gemini.fill import fill_nutrition
 from core.gemini.lab_extraction import extract_lab_results
+from core.gemini.lab_summary import generate_lab_summary
 from core.gemini.rating import (
     answer_question, generate_daily_report, generate_weekly_report, rate_meal, transcribe_voice,
 )
@@ -82,6 +89,7 @@ __all__ = [
     "extract_lab_results",
     "extract_body_comp_scan",
     "generate_body_comp_summary",
+    "generate_lab_summary",
     "NUTRIENT_KEYS",
     "CORE_MACRO_KEYS",
 ]
