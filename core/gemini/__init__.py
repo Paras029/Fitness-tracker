@@ -36,6 +36,18 @@
                                           in/out-of-range judgment happens
                                           in core/health_service.py.
 
+  body_comp_extraction.py                Health-domain extraction: reads
+    extract_body_comp_scan()             a body-composition scan (InBody-
+                                          style printout or smart-scale
+                                          screenshot) into weight/body-fat/
+                                          muscle/segmental fields.
+
+  body_comp_summary.py                   ON-DEMAND only, like review.py:
+    generate_body_comp_summary()         scores one body-comp entry
+                                          0-100 with a short narrative,
+                                          using recent history for trend
+                                          framing if given.
+
   common.py                              Nutrient-key constants and
                                           schema helpers shared by fill.py
                                           and review.py.
@@ -45,6 +57,8 @@ Everything below is re-exported here so callers keep writing
 is an internal reorganization, not a change to the public API.
 """
 
+from core.gemini.body_comp_extraction import extract_body_comp_scan
+from core.gemini.body_comp_summary import generate_body_comp_summary
 from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _extract_json
 from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
@@ -66,6 +80,8 @@ __all__ = [
     "answer_question",
     "transcribe_voice",
     "extract_lab_results",
+    "extract_body_comp_scan",
+    "generate_body_comp_summary",
     "NUTRIENT_KEYS",
     "CORE_MACRO_KEYS",
 ]

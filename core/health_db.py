@@ -21,7 +21,13 @@ CREATE TABLE IF NOT EXISTS body_comp_entries (
     bmr REAL,
     body_water_pct REAL,
     source TEXT NOT NULL DEFAULT 'manual',   -- manual | photo | pdf
-    note TEXT
+    note TEXT,
+    segments_json TEXT,    -- {"right_arm":{"lean_kg":..,"fat_kg":..}, "left_arm":.., "trunk":.., "right_leg":.., "left_leg":..}
+    ai_score INTEGER,
+    ai_summary TEXT,
+    ai_highlights_json TEXT,
+    ai_watch TEXT,
+    ai_generated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_body_comp_date ON body_comp_entries(log_date);
 
@@ -88,8 +94,30 @@ DEFAULT_LAB_CATEGORIES = [
 ]
 
 
+# Columns added after the table's first release -- CREATE TABLE IF NOT
+# EXISTS won't backfill these onto an already-created table, so any
+# install that ran init_health_db() before segments/AI-summary support
+# existed needs this one-time ALTER TABLE ADD COLUMN pass. Safe to run
+# every startup: it only adds what's actually missing.
+_BODY_COMP_NEW_COLUMNS = [
+    ("segments_json", "TEXT"), ("ai_score", "INTEGER"), ("ai_summary", "TEXT"),
+    ("ai_highlights_json", "TEXT"), ("ai_watch", "TEXT"), ("ai_generated_at", "TEXT"),
+]
+
+
+def _migrate_body_comp_columns(conn):
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "body_comp_entries" not in tables:
+        return
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(body_comp_entries)")}
+    for col, col_type in _BODY_COMP_NEW_COLUMNS:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE body_comp_entries ADD COLUMN {col} {col_type}")
+
+
 def init_health_db():
     with db.get_conn() as conn:
+        _migrate_body_comp_columns(conn)
         conn.executescript(HEALTH_SCHEMA)
         existing = {row["key"] for row in conn.execute("SELECT key FROM lab_categories")}
         for key, label, order_ in DEFAULT_LAB_CATEGORIES:
@@ -105,17 +133,27 @@ def init_health_db():
 
 def create_body_comp_entry(weight_kg=None, body_fat_pct=None, skeletal_muscle_kg=None,
                             visceral_fat=None, bmr=None, body_water_pct=None,
-                            source="manual", note=None, log_date=None):
+                            source="manual", note=None, log_date=None, segments=None):
     date = log_date or db.today_str()
     with db.get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO body_comp_entries (log_date, logged_at, weight_kg, body_fat_pct, "
-            "skeletal_muscle_kg, visceral_fat, bmr, body_water_pct, source, note) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "skeletal_muscle_kg, visceral_fat, bmr, body_water_pct, source, note, segments_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (date, db.now_iso(), weight_kg, body_fat_pct, skeletal_muscle_kg,
-             visceral_fat, bmr, body_water_pct, source, note),
+             visceral_fat, bmr, body_water_pct, source, note,
+             json.dumps(segments) if segments else None),
         )
         return cur.lastrowid
+
+
+def _row_to_body_comp(row):
+    d = dict(row)
+    segments_json = d.pop("segments_json")
+    d["segments"] = json.loads(segments_json) if segments_json else None
+    highlights_json = d.pop("ai_highlights_json")
+    d["ai_highlights"] = json.loads(highlights_json) if highlights_json else None
+    return d
 
 
 def list_body_comp_entries(limit=None):
@@ -123,7 +161,22 @@ def list_body_comp_entries(limit=None):
     if limit:
         q += f" LIMIT {int(limit)}"
     with db.get_conn() as conn:
-        return [dict(row) for row in conn.execute(q)]
+        return [_row_to_body_comp(row) for row in conn.execute(q)]
+
+
+def get_body_comp_entry(entry_id):
+    with db.get_conn() as conn:
+        row = conn.execute("SELECT * FROM body_comp_entries WHERE id=?", (entry_id,)).fetchone()
+        return _row_to_body_comp(row) if row else None
+
+
+def set_body_comp_summary(entry_id, score, summary, highlights, watch):
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE body_comp_entries SET ai_score=?, ai_summary=?, ai_highlights_json=?, "
+            "ai_watch=?, ai_generated_at=? WHERE id=?",
+            (score, summary, json.dumps(highlights or []), watch, db.now_iso(), entry_id),
+        )
 
 
 # ---------------- lab categories (mirrors db.py's nutrient_defs) ----------------

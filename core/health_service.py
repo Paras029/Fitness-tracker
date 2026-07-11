@@ -90,9 +90,47 @@ def log_water(ml, log_date=None):
 
 def log_body_comp(weight_kg=None, body_fat_pct=None, skeletal_muscle_kg=None,
                    visceral_fat=None, bmr=None, body_water_pct=None,
-                   source="manual", note=None, log_date=None):
+                   source="manual", note=None, log_date=None, segments=None):
     return health_db.create_body_comp_entry(
         weight_kg=weight_kg, body_fat_pct=body_fat_pct, skeletal_muscle_kg=skeletal_muscle_kg,
         visceral_fat=visceral_fat, bmr=bmr, body_water_pct=body_water_pct,
-        source=source, note=note, log_date=log_date,
+        source=source, note=note, log_date=log_date, segments=segments,
     )
+
+
+def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None):
+    """Parses an uploaded scan into fields the entry form can prefill --
+    never persists. The user reviews/edits before hitting Save, same as
+    the manual-entry path (log_body_comp), just pre-filled."""
+    from core import gemini
+
+    extraction = gemini.extract_body_comp_scan(pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type)
+    if extraction is None:
+        return {"error": "Couldn't parse this scan -- check GEMINI_API_KEY / quota with "
+                          "python -m scripts.check_setup, or try a clearer photo."}
+    return extraction
+
+
+def get_body_comp_summary(entry_id, history_count=6):
+    """On-demand AI score + narrative for one entry, using up to
+    `history_count` prior entries (oldest first) for trend framing.
+    Persists the result onto the entry so it doesn't need regenerating
+    every time the entry list is viewed -- only when the user asks again."""
+    from core import gemini
+
+    entry = health_db.get_body_comp_entry(entry_id)
+    if entry is None:
+        return None
+    all_entries = health_db.list_body_comp_entries()
+    history = [e for e in all_entries if e["id"] != entry_id and e["log_date"] <= entry["log_date"]]
+    history = list(reversed(history[:history_count]))
+
+    result = gemini.generate_body_comp_summary(entry, history=history)
+    if result is None:
+        return {"error": "Couldn't generate a summary -- check GEMINI_API_KEY / quota with "
+                          "python -m scripts.check_setup."}
+    health_db.set_body_comp_summary(
+        entry_id, score=result["score"], summary=result["summary"],
+        highlights=result.get("highlights"), watch=result.get("watch"),
+    )
+    return result

@@ -494,9 +494,15 @@
   }
 
   /* ---- Health screen -- reuses the tokens/components above, adds only
-     what has no existing equivalent (sub-tabs, flag badges, water glass). ---- */
-  .health-tab{ display:none; }
-  .health-tab.active{ display:block; }
+     what has no existing equivalent (section dividers, flag badges, body
+     diagram, water glass). All three sub-areas (Body Composition, Labs,
+     Water) sit on one continuously scrolling screen -- no sub-tabs, there
+     isn't enough in any one of them to justify its own page. ---- */
+  .health-section{ margin-bottom:30px; }
+  .health-section:last-child{ margin-bottom:0; }
+  .health-section-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line); }
+  .health-section-head h2{ font-size:19px; }
+  .health-section-head .section-sub{ margin-top:0; }
   .flag-badge{
     font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px;
     text-transform:uppercase; letter-spacing:.03em; font-family:'IBM Plex Mono',monospace; flex:none;
@@ -518,6 +524,23 @@
     width:100%; border:1px solid var(--line-strong); border-radius:6px; padding:5px 7px; font-size:12px;
     background:var(--paper-sunk); color:var(--ink); font-family:'IBM Plex Mono',monospace;
   }
+  .doc-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .doc-row:last-child{ border-bottom:none; }
+  .doc-row .docname{ flex:1; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .doc-row .docdate{ font-size:11px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; flex:none; }
+
+  /* body-comp entries list -- its own class instead of overloading
+     .lab-row, so long metric strings wrap instead of overflowing the card. */
+  .bc-entry-row{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
+  .bc-entry-row:last-child{ border-bottom:none; }
+  .bc-entry-date{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--ink-faint); width:100%; margin-bottom:1px;
+  }
+  .bc-entry-metrics{ color:var(--ink-muted); line-height:1.6; }
+  .bc-entry-metrics b{ color:var(--ink); font-family:'IBM Plex Mono',monospace; font-weight:600; }
+  .bc-entry-src{ font-size:10px; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.04em; font-family:'IBM Plex Mono',monospace; }
+
   .water-glass-wrap{ display:flex; flex-direction:column; align-items:center; gap:12px; padding:22px 20px 8px; }
   .water-glass{ width:120px; height:190px; overflow:visible; }
   .water-fill-rect{ transition:y .6s cubic-bezier(.2,.8,.2,1), height .6s cubic-bezier(.2,.8,.2,1); }
@@ -531,6 +554,27 @@
     flex:1; background:var(--paper-sunk); border:1px solid var(--line); border-radius:8px; padding:9px 11px;
     font-size:13px; color:var(--ink); font-family:'IBM Plex Mono',monospace; text-align:center;
   }
+
+  /* segmental body diagram -- InBody-style fat/muscle-by-region view.
+     Deliberately NOT color-graded against a medical reference (this app
+     has no such reference data) -- intensity is only ever relative to
+     the entry's OWN highest segment, which the caption makes explicit. */
+  .body-diagram-wrap{ display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+  .body-diagram{ width:130px; height:210px; flex:none; }
+  .body-segment{ cursor:pointer; stroke:var(--line-strong); stroke-width:1.5; transition:opacity .2s ease, stroke .2s ease; }
+  .body-segment:hover{ stroke:var(--ink); }
+  .body-segment.selected{ stroke:var(--ink); stroke-width:2.5; }
+  .body-diagram-side{ flex:1; min-width:160px; }
+  .body-diagram-metric-toggle{ margin-bottom:10px; }
+  .body-segment-detail{ font-size:13px; line-height:1.7; }
+  .body-segment-detail .bsd-name{ font-weight:700; }
+  .body-segment-detail .bsd-row{ display:flex; justify-content:space-between; color:var(--ink-muted); max-width:220px; }
+  .body-segment-detail .bsd-row b{ color:var(--ink); font-family:'IBM Plex Mono',monospace; }
+  .body-diagram-caption{ font-size:11px; color:var(--ink-faint); margin-top:10px; max-width:220px; line-height:1.5; }
+  .body-diagram-empty{ font-size:12.5px; color:var(--ink-faint); padding:10px 0; }
+
+  .bc-summary-card{ padding:18px 20px; }
+  .bc-summary-empty{ font-size:12.5px; color:var(--ink-faint); }
 </style>
 </head>
 <body>
@@ -798,14 +842,14 @@
           <div class="eyebrow">Nutrition Ledger</div>
           <h1>Health &amp; body</h1>
         </div>
-        <div class="seg" id="healthTabSeg">
-          <button class="active" data-htab="bodycomp" type="button">Body Composition</button>
-          <button data-htab="labs" type="button">Labs</button>
-          <button data-htab="water" type="button">Water</button>
-        </div>
       </div>
 
-      <div class="health-tab active" id="healthTab-bodycomp">
+      <!-- ==================== Body Composition ==================== -->
+      <div class="health-section" id="healthSection-bodycomp">
+        <div class="health-section-head">
+          <h2>Body composition</h2>
+          <div class="section-sub">Weigh-ins, scans, and segmental breakdown</div>
+        </div>
         <div class="body-grid">
           <div class="stack">
             <div class="card trend-card">
@@ -820,6 +864,21 @@
                 <div class="tooltip" id="bcWeightTooltip"></div>
               </div>
             </div>
+
+            <div class="card quickadd-card">
+              <h3 class="section-label">Segmental breakdown</h3>
+              <div class="section-sub">From your latest scan with segment data -- fat and muscle by region.</div>
+              <div id="bcSegmentPanel" style="margin-top:12px;"></div>
+            </div>
+
+            <div class="card bc-summary-card">
+              <div class="trend-head">
+                <h3 class="section-label">AI score &amp; summary</h3>
+                <button class="btn btn-ghost" id="bcSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
+              </div>
+              <div id="bcSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Log an entry, then generate a summary for it.</div></div>
+            </div>
+
             <div class="card ledger-card">
               <h3 class="section-label">Entries</h3>
               <div id="bcEntryList" style="margin-top:10px;"></div>
@@ -828,7 +887,15 @@
           <div class="stack">
             <div class="card quickadd-card">
               <h3 class="section-label">Log a weigh-in / scan</h3>
-              <div class="section-sub">Manual entry for now -- photo/PDF scan parsing is on the roadmap.</div>
+              <div class="section-sub">Upload an InBody-style scan or smart-scale screenshot to prefill this, or enter values manually.</div>
+              <div class="quickadd-row" style="margin-top:12px;">
+                <button class="btn btn-ghost" id="bcUploadBtn" style="flex:1; justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Upload PDF or photo
+                </button>
+                <input type="file" id="bcUploadInput" accept="image/*,application/pdf" style="display:none;">
+              </div>
+              <div class="miss" id="bcUploadNote" style="margin-top:6px;"></div>
               <div class="field" style="margin-top:12px;"><label>Weight (kg)</label><input id="bcWeight" type="number" step="any"></div>
               <div class="field-row">
                 <div class="field"><label>Body fat %</label><input id="bcBodyFat" type="number" step="any"></div>
@@ -845,7 +912,12 @@
         </div>
       </div>
 
-      <div class="health-tab" id="healthTab-labs">
+      <!-- ==================== Labs ==================== -->
+      <div class="health-section" id="healthSection-labs">
+        <div class="health-section-head">
+          <h2>Labs</h2>
+          <div class="section-sub">Blood panels and other reports</div>
+        </div>
         <div class="body-grid">
           <div class="stack">
             <div class="card quickadd-card">
@@ -901,7 +973,12 @@
         </div>
       </div>
 
-      <div class="health-tab" id="healthTab-water">
+      <!-- ==================== Water ==================== -->
+      <div class="health-section" id="healthSection-water">
+        <div class="health-section-head">
+          <h2>Water</h2>
+          <div class="section-sub">Daily intake</div>
+        </div>
         <div class="body-grid">
           <div class="stack">
             <div class="card">
@@ -2140,6 +2217,11 @@
   var healthApi = {
     bodyCompList: function(){ return fetch('/api/health/body-comp').then(r=>r.json()); },
     createBodyComp: function(body){ return fetch('/api/health/body-comp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
+    extractBodyComp: function(file){
+      var fd = new FormData(); fd.append('file', file);
+      return fetch('/api/health/body-comp/extract', {method:'POST', body: fd}).then(r=>r.json());
+    },
+    bodyCompSummary: function(entryId){ return fetch('/api/health/body-comp/' + entryId + '/summary', {method:'POST'}).then(r=>r.json()); },
     labCategories: function(){ return fetch('/api/health/lab-categories').then(r=>r.json()); },
     createLabCategory: function(body){ return fetch('/api/health/lab-categories', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
     updateLabCategory: function(key, body){ return fetch('/api/health/lab-categories/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
@@ -2166,17 +2248,7 @@
     waterTrend: function(days){ return fetch('/api/health/water?days=' + days).then(r=>r.json()); },
   };
 
-  var healthState = { booted: false, labCategories: [], labResults: [] };
-
-  // ---- sub-tabs ----
-  document.querySelectorAll('#healthTabSeg button[data-htab]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      document.querySelectorAll('#healthTabSeg button[data-htab]').forEach(function(b){ b.classList.remove('active'); });
-      btn.classList.add('active');
-      document.querySelectorAll('.health-tab').forEach(function(t){ t.classList.remove('active'); });
-      document.getElementById('healthTab-' + btn.dataset.htab).classList.add('active');
-    });
-  });
+  var healthState = { booted: false, labCategories: [], labResults: [], bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null };
 
   // ---- generic trend chart (parameterized version of drawKcalChart, so
   // nutrition's chart code stays untouched but the same visual language
@@ -2234,40 +2306,191 @@
   }
 
   // ---- body composition ----
+  var BC_FIELD_IDS = ['bcWeight','bcBodyFat','bcMuscle','bcVisceral','bcBmr','bcWater'];
+  var pendingBcSegments = null;
+  var pendingBcSource = 'manual';
+
+  function fmtNum(v, decimals){
+    return v == null ? '--' : Number(v).toFixed(decimals == null ? 1 : decimals).replace(/\.0+$/, '');
+  }
+
   function loadBodyComp(){
-    healthApi.bodyCompList().then(function(entries){
+    return healthApi.bodyCompList().then(function(entries){
+      healthState.bodyCompEntries = entries;
       var series = entries.slice(0, 30).filter(function(e){ return e.weight_kg != null; })
         .reverse().map(function(e){ return {d: e.log_date, v: e.weight_kg}; });
       drawHealthTrendChart('bcWeightChart', 'bcWeightTooltip', 'bcWeightChartWrap', series, ' kg', 'var(--accent)');
+
       var list = document.getElementById('bcEntryList');
       if(entries.length === 0){
         list.innerHTML = '<div class="empty-note">No entries yet -- log a weigh-in on the right.</div>';
-        return;
+      } else {
+        list.innerHTML = entries.map(function(e){
+          var bits = [];
+          if(e.weight_kg != null) bits.push('<b>'+fmtNum(e.weight_kg)+' kg</b>');
+          if(e.body_fat_pct != null) bits.push('<b>'+fmtNum(e.body_fat_pct)+'%</b> fat');
+          if(e.skeletal_muscle_kg != null) bits.push('<b>'+fmtNum(e.skeletal_muscle_kg)+' kg</b> muscle');
+          if(e.visceral_fat != null) bits.push('VF <b>'+fmtNum(e.visceral_fat)+'</b>');
+          if(e.bmr != null) bits.push('<b>'+fmtNum(e.bmr, 0)+' kcal</b> BMR');
+          if(e.body_water_pct != null) bits.push('<b>'+fmtNum(e.body_water_pct)+'%</b> water');
+          return '<div class="bc-entry-row">' +
+            '<span class="bc-entry-date">'+e.log_date+'<span class="bc-entry-src">'+e.source+'</span></span>' +
+            '<span class="bc-entry-metrics">'+(bits.join(' &middot; ') || 'No metrics recorded')+'</span>' +
+            '</div>';
+        }).join('');
       }
-      list.innerHTML = entries.map(function(e){
-        var bits = [];
-        if(e.weight_kg != null) bits.push(e.weight_kg + ' kg');
-        if(e.body_fat_pct != null) bits.push(e.body_fat_pct + '% fat');
-        if(e.skeletal_muscle_kg != null) bits.push(e.skeletal_muscle_kg + ' kg muscle');
-        if(e.visceral_fat != null) bits.push('VF ' + e.visceral_fat);
-        if(e.bmr != null) bits.push(e.bmr + ' kcal BMR');
-        if(e.body_water_pct != null) bits.push(e.body_water_pct + '% water');
-        return '<div class="lab-row" style="cursor:default;"><span class="ltdate" style="width:auto; margin-right:8px;">'+e.log_date+'</span>' +
-          '<span class="ltname" style="font-weight:400;">'+(bits.join(' · ') || '--')+'</span></div>';
-      }).join('');
+
+      renderBodySegmentPanel();
+      renderBcSummary();
+      return entries;
     });
   }
-  document.getElementById('bcSaveBtn').addEventListener('click', function(){
+
+  function latestEntryWithSegments(){
+    return healthState.bodyCompEntries.find(function(e){ return e.segments; }) || null;
+  }
+
+  function saveBodyComp(){
     var val = function(id){ var v = document.getElementById(id).value; return v === '' ? null : parseFloat(v); };
     var body = {
       weight_kg: val('bcWeight'), body_fat_pct: val('bcBodyFat'), skeletal_muscle_kg: val('bcMuscle'),
       visceral_fat: val('bcVisceral'), bmr: val('bcBmr'), body_water_pct: val('bcWater'),
+      source: pendingBcSource, segments: pendingBcSegments,
     };
-    if(Object.values(body).every(function(v){ return v === null; })){ toast('Enter at least one value.'); return; }
+    if(Object.keys(body).every(function(k){ return k==='source'||k==='segments'||body[k]===null; })){
+      toast('Enter at least one value.'); return;
+    }
     healthApi.createBodyComp(body).then(function(){
       toast('Entry saved.');
-      ['bcWeight','bcBodyFat','bcMuscle','bcVisceral','bcBmr','bcWater'].forEach(function(id){ document.getElementById(id).value = ''; });
+      BC_FIELD_IDS.forEach(function(id){ document.getElementById(id).value = ''; });
+      pendingBcSegments = null; pendingBcSource = 'manual';
+      document.getElementById('bcUploadNote').textContent = '';
       loadBodyComp();
+    });
+  }
+  document.getElementById('bcSaveBtn').addEventListener('click', saveBodyComp);
+
+  var bcUploadInput = document.getElementById('bcUploadInput');
+  document.getElementById('bcUploadBtn').addEventListener('click', function(){ bcUploadInput.click(); });
+  bcUploadInput.addEventListener('change', function(){
+    var file = bcUploadInput.files[0];
+    if(!file) return;
+    var note = document.getElementById('bcUploadNote');
+    note.textContent = 'Reading scan…';
+    note.classList.add('loading-pulse');
+    healthApi.extractBodyComp(file).then(function(draft){
+      note.classList.remove('loading-pulse');
+      if(draft.error){ note.textContent = draft.error; return; }
+      var setVal = function(id, v){ document.getElementById(id).value = v == null ? '' : v; };
+      setVal('bcWeight', draft.weight_kg); setVal('bcBodyFat', draft.body_fat_pct);
+      setVal('bcMuscle', draft.skeletal_muscle_kg); setVal('bcVisceral', draft.visceral_fat);
+      setVal('bcBmr', draft.bmr); setVal('bcWater', draft.body_water_pct);
+      pendingBcSegments = draft.segments || null;
+      pendingBcSource = (file.type === 'application/pdf') ? 'pdf' : 'photo';
+      note.textContent = 'Extracted from ' + file.name + (draft.segments ? ' (with segmental data)' : '') + ' -- review, then save.';
+    });
+    bcUploadInput.value = '';
+  });
+
+  // ---- segmental body diagram (fat/muscle toggle, relative to the
+  // entry's own segments only -- no medical reference is implied). ----
+  var BODY_SEGMENTS = [
+    {key:'left_arm', label:'Left arm', x:18, y:42, w:18, h:64},
+    {key:'right_arm', label:'Right arm', x:84, y:42, w:18, h:64},
+    {key:'trunk', label:'Trunk', x:42, y:38, w:36, h:70},
+    {key:'left_leg', label:'Left leg', x:44, y:112, w:16, h:90},
+    {key:'right_leg', label:'Right leg', x:60, y:112, w:16, h:90},
+  ];
+  function renderBodySegmentPanel(){
+    var panel = document.getElementById('bcSegmentPanel');
+    var entry = latestEntryWithSegments();
+    if(!entry){
+      panel.innerHTML = '<div class="body-diagram-empty">No segmental data yet -- upload an InBody-style scan that includes segmental lean/fat analysis.</div>';
+      return;
+    }
+    var metric = healthState.segmentMetric;
+    var metricKey = metric === 'fat' ? 'fat_kg' : 'lean_kg';
+    var color = metric === 'fat' ? 'var(--amber)' : 'var(--accent)';
+    var values = BODY_SEGMENTS.map(function(s){ var seg = entry.segments[s.key]; return seg ? (seg[metricKey] || 0) : 0; });
+    var max = Math.max.apply(null, values.concat([0.001]));
+
+    var shapes = BODY_SEGMENTS.map(function(s){
+      var seg = entry.segments[s.key];
+      var v = seg ? seg[metricKey] : null;
+      var opacity = v == null ? 0.08 : 0.25 + 0.65 * (v / max);
+      var selected = healthState.selectedSegment === s.key ? ' selected' : '';
+      return '<rect class="body-segment'+selected+'" data-segment="'+s.key+'" x="'+s.x+'" y="'+s.y+'" width="'+s.w+'" height="'+s.h+'" rx="8" fill="'+color+'" fill-opacity="'+opacity.toFixed(2)+'"/>';
+    }).join('');
+    var head = '<circle cx="60" cy="20" r="14" fill="none" stroke="var(--line-strong)" stroke-width="1.5"/>';
+
+    panel.innerHTML =
+      '<div class="body-diagram-wrap">' +
+        '<svg class="body-diagram" viewBox="0 0 120 220">' + head + shapes + '</svg>' +
+        '<div class="body-diagram-side">' +
+          '<div class="seg body-diagram-metric-toggle" id="bcMetricToggle">' +
+            '<button data-metric="fat" class="'+(metric==='fat'?'active':'')+'" type="button">Fat</button>' +
+            '<button data-metric="muscle" class="'+(metric==='muscle'?'active':'')+'" type="button">Muscle</button>' +
+          '</div>' +
+          '<div class="body-segment-detail" id="bcSegmentDetail">' + segmentDetailHTML(entry, healthState.selectedSegment) + '</div>' +
+          '<div class="body-diagram-caption">Shaded relative to this scan\'s own highest segment -- not a medical reference range. From '+entry.log_date+'.</div>' +
+        '</div>' +
+      '</div>';
+
+    panel.querySelectorAll('.body-segment').forEach(function(el){
+      el.addEventListener('click', function(){
+        healthState.selectedSegment = el.dataset.segment;
+        renderBodySegmentPanel();
+      });
+    });
+    panel.querySelectorAll('#bcMetricToggle button').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        healthState.segmentMetric = btn.dataset.metric;
+        renderBodySegmentPanel();
+      });
+    });
+  }
+  function segmentDetailHTML(entry, key){
+    if(!key){
+      return '<div class="bsd-name">Click a region</div><div style="color:var(--ink-faint); font-size:12px; margin-top:4px;">See its fat and muscle mass.</div>';
+    }
+    var def = BODY_SEGMENTS.find(function(s){ return s.key === key; });
+    var seg = entry.segments[key] || {};
+    return '<div class="bsd-name">'+def.label+'</div>' +
+      '<div class="bsd-row"><span>Fat mass</span><b>'+(seg.fat_kg != null ? fmtNum(seg.fat_kg)+' kg' : '--')+'</b></div>' +
+      '<div class="bsd-row"><span>Lean mass</span><b>'+(seg.lean_kg != null ? fmtNum(seg.lean_kg)+' kg' : '--')+'</b></div>';
+  }
+
+  // ---- AI score & summary (on-demand, one Gemini call per click) ----
+  function renderBcSummary(){
+    var body = document.getElementById('bcSummaryBody');
+    var latest = healthState.bodyCompEntries[0];
+    if(!latest){
+      body.innerHTML = '<div class="bc-summary-empty">Log an entry, then generate a summary for it.</div>';
+      return;
+    }
+    if(latest.ai_score == null){
+      body.innerHTML = '<div class="bc-summary-empty">No summary yet for the latest entry ('+latest.log_date+') -- click Generate summary.</div>';
+      return;
+    }
+    var highlights = (latest.ai_highlights || []).map(function(h){ return '<li>'+h+'</li>'; }).join('');
+    body.innerHTML =
+      '<div class="dr-score-row"><span class="dr-score">'+latest.ai_score+'</span><span class="dr-score-label">/100 &middot; '+latest.log_date+'</span></div>' +
+      '<div class="insight-body">'+latest.ai_summary+
+        (highlights ? '<ul class="dr-tips">'+highlights+'</ul>' : '') +
+        (latest.ai_watch ? '<div class="insight-watch">'+latest.ai_watch+'</div>' : '') +
+      '</div>';
+  }
+  document.getElementById('bcSummaryBtn').addEventListener('click', function(){
+    var latest = healthState.bodyCompEntries[0];
+    if(!latest){ toast('Log an entry first.'); return; }
+    var btn = document.getElementById('bcSummaryBtn');
+    btn.disabled = true; btn.textContent = 'Generating…';
+    healthApi.bodyCompSummary(latest.id).then(function(res){
+      btn.disabled = false; btn.textContent = 'Generate summary';
+      if(res.error){ toast(res.error); return; }
+      latest.ai_score = res.score; latest.ai_summary = res.summary;
+      latest.ai_highlights = res.highlights; latest.ai_watch = res.watch;
+      renderBcSummary();
     });
   });
 
@@ -2428,7 +2651,7 @@
       var el = document.getElementById('otherDocList');
       if(docs.length === 0){ el.innerHTML = '<div class="empty-note">No other documents yet.</div>'; return; }
       el.innerHTML = docs.map(function(d){
-        return '<div class="lab-row" style="cursor:default;"><span class="ltname">'+d.label+'</span><span class="ltdate" style="width:auto;">'+d.log_date+'</span></div>';
+        return '<div class="doc-row"><span class="docname">'+d.label+'</span><span class="docdate">'+d.log_date+'</span></div>';
       }).join('');
     });
   }

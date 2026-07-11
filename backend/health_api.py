@@ -43,8 +43,29 @@ def post_body_comp():
         skeletal_muscle_kg=body.get("skeletal_muscle_kg"), visceral_fat=body.get("visceral_fat"),
         bmr=body.get("bmr"), body_water_pct=body.get("body_water_pct"),
         source=body.get("source", "manual"), note=body.get("note"), log_date=body.get("log_date"),
+        segments=body.get("segments"),
     )
     return jsonify({"id": entry_id})
+
+
+@health_bp.route("/body-comp/extract", methods=["POST"])
+def body_comp_extract():
+    file = request.files.get("file")
+    if not file:
+        return jsonify({"error": "no file uploaded"}), 400
+    file_bytes = file.read()
+    mime_type = file.mimetype or "application/octet-stream"
+    kwargs = {"pdf_bytes": file_bytes} if mime_type == "application/pdf" else {"image_bytes": file_bytes}
+    draft = health_service.extract_body_comp_scan(mime_type=mime_type, **kwargs)
+    return jsonify(draft)
+
+
+@health_bp.route("/body-comp/<int:entry_id>/summary", methods=["POST"])
+def body_comp_summary(entry_id):
+    result = health_service.get_body_comp_summary(entry_id)
+    if result is None:
+        return jsonify({"error": "entry not found"}), 404
+    return jsonify(result)
 
 
 # ---------------- lab categories ----------------
