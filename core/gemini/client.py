@@ -16,11 +16,13 @@ current free-tier model and update GEMINI_MODEL in .env, or run
 `python -m scripts.check_setup` which cross-checks it automatically.
 """
 
+import collections
 import json
 import logging
 import os
 import re
 import threading
+import time
 
 import requests
 
@@ -30,6 +32,32 @@ TIMEOUT = 30
 _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 log = logging.getLogger("gemini")
 DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
+
+# Free-tier Gemini keys are commonly capped around 15 requests/minute --
+# chunked lab-report extraction (see health_service.py) can easily fire
+# off that many calls for one long report, especially with a few running
+# concurrently. Rather than hoping callers space themselves out, every
+# call() blocks here until there's room in the last 60s window -- a
+# sliding-window throttle shared process-wide (thread-safe: chunk
+# extraction runs several calls on a thread pool). Override via
+# GEMINI_RPM_LIMIT if a paid key allows more.
+GEMINI_RPM_LIMIT = int(os.environ.get("GEMINI_RPM_LIMIT") or "15")
+_rate_lock = threading.Lock()
+_recent_call_times = collections.deque()
+
+
+def _throttle_for_rate_limit():
+    while True:
+        with _rate_lock:
+            now = time.monotonic()
+            while _recent_call_times and now - _recent_call_times[0] >= 60:
+                _recent_call_times.popleft()
+            if len(_recent_call_times) < GEMINI_RPM_LIMIT:
+                _recent_call_times.append(now)
+                return
+            wait = 60 - (now - _recent_call_times[0]) + 0.05
+        log.info("Gemini rate limit (%d/min) reached -- waiting %.1fs before the next call.", GEMINI_RPM_LIMIT, wait)
+        time.sleep(wait)
 
 # call() returns None on any failure (the uniform "didn't work, fall back"
 # signal every caller already relies on) -- but a bare None can't tell a
@@ -65,6 +93,7 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
         _local.last_error = "GEMINI_API_KEY is not set."
         log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
         return None
+    _throttle_for_rate_limit()
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
     body = {"contents": [{"parts": parts}]}
     if use_search:

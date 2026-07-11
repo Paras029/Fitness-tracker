@@ -36,26 +36,28 @@ _MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 
 # A long PDF is split into page-range chunks and extracted with one
 # Gemini call per chunk, rather than one call for the whole thing (which
-# was truncating on anything long) or one call per page (which would burn
-# through a free-tier quota fast on a 40+ page document). The chunk size
-# adapts to length so the call count stays bounded regardless of how long
-# the report is -- a 10-page and a 100-page report both stay within
-# LAB_CHUNK_MAX_CALLS calls, just with proportionally bigger chunks.
-LAB_CHUNK_MAX_CALLS = 6
-LAB_CHUNK_MIN_PAGES = 6
-LAB_CHUNK_MAX_PAGES = 12
-# How many chunk calls run at once -- concurrency cuts wall-clock time
-# (the whole point, since these calls don't compete for the same quota
-# bucket any differently run serially vs in parallel) without raising the
-# total call count, which is the actual budget concern.
+# truncates on anything long -- a dense page of lab results eats a
+# surprising number of output tokens). 5 pages/call keeps each call's
+# output comfortably inside its token budget even for dense panels; a
+# 44-page report becomes ~9 calls, which is a one-off cost per upload, not
+# a recurring one -- client.py's rate limiter (GEMINI_RPM_LIMIT) paces
+# however many that ends up being against the free tier's per-minute cap,
+# so this doesn't need its own call-count ceiling on top of that.
+LAB_CHUNK_PAGES = 5
+# Small reports don't benefit from being split into an oddly-sized 4+1
+# chunk pair -- anything within reach of one call's budget just stays one.
+LAB_CHUNK_SINGLE_CALL_MAX_PAGES = 6
+# How many chunk calls run at once -- concurrency cuts wall-clock time;
+# the rate limiter (not this) is what actually keeps calls/minute in
+# bounds, so raising this doesn't risk exceeding the quota, just how fast
+# the limiter's queue gets worked through.
 LAB_CHUNK_WORKERS = 3
 
 
 def _lab_chunk_size(page_count):
-    if page_count <= LAB_CHUNK_MIN_PAGES:
+    if page_count <= LAB_CHUNK_SINGLE_CALL_MAX_PAGES:
         return page_count
-    ideal = -(-page_count // LAB_CHUNK_MAX_CALLS)  # ceil division
-    return max(LAB_CHUNK_MIN_PAGES, min(LAB_CHUNK_MAX_PAGES, ideal))
+    return LAB_CHUNK_PAGES
 
 
 def _too_large_error(file_bytes):

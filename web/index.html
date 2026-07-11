@@ -518,15 +518,31 @@
   .flag-badge.normal{ background:var(--accent-soft); color:var(--good); }
   .flag-badge.low{ background:var(--amber-soft); color:var(--warning); }
   .flag-badge.high{ background:var(--amber-soft); color:var(--critical); }
-  .lab-cat-group{ margin-bottom:14px; }
-  .lab-cat-group:last-child{ margin-bottom:0; }
-  .lab-cat-title{ font-size:12px; font-weight:700; color:var(--ink-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px; }
+  .lab-cat-group{ border-bottom:1px solid var(--line); }
+  .lab-cat-group:last-child{ border-bottom:none; }
+  .lab-cat-header{
+    display:flex; align-items:center; gap:8px; width:100%; padding:11px 2px; border:none; background:transparent;
+    cursor:pointer; text-align:left; font-family:inherit;
+  }
+  .lab-cat-header:hover{ background:var(--paper-sunk); }
+  .lab-cat-chevron{ width:11px; height:11px; color:var(--ink-faint); flex:none; transition:transform .15s ease; }
+  .lab-cat-chevron.open{ transform:rotate(90deg); }
+  .lab-cat-title{ font-size:12.5px; font-weight:700; color:var(--ink); text-transform:uppercase; letter-spacing:.06em; }
+  .lab-cat-count{ font-size:11px; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace; margin-left:auto; flex:none; }
+  .lab-cat-body{ padding:0 2px 10px; }
   .lab-row{ display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer; }
   .lab-row:hover{ background:var(--paper-sunk); }
   .lab-row:last-child{ border-bottom:none; }
+  .lab-row.open{ background:var(--paper-sunk); }
   .lab-row .ltname{ flex:1; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .lab-row .ltval{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--ink-muted); white-space:nowrap; }
   .lab-row .ltdate{ font-size:11px; color:var(--ink-faint); width:78px; text-align:right; flex:none; }
+  .lab-detail{ padding:10px 10px 14px; margin-bottom:6px; background:var(--paper-sunk); border-radius:8px; }
+  .lab-detail-row{ display:flex; justify-content:space-between; padding:3px 0; font-size:12.5px; color:var(--ink-muted); }
+  .lab-detail-row b{ color:var(--ink); font-family:'IBM Plex Mono',monospace; }
+  .lab-detail-note{ font-size:12px; color:var(--ink-muted); line-height:1.6; margin-top:8px; }
+  .lab-detail-note b{ color:var(--ink); }
+  .lab-detail .chart-wrap{ margin-top:10px; }
   .lab-draft-row{ display:grid; grid-template-columns:1.6fr 1fr .8fr .8fr .8fr; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:12.5px; }
   .lab-draft-row input, .lab-draft-row select{
     width:100%; border:1px solid var(--line-strong); border-radius:6px; padding:5px 7px; font-size:12px;
@@ -909,9 +925,17 @@
             <div class="card trend-card">
               <div class="trend-head">
                 <div>
-                  <div class="section-label">Weight trend</div>
+                  <div class="section-label" id="bcTrendTitle">Weight trend</div>
                   <div class="section-sub">Last 30 logged entries</div>
                 </div>
+                <select id="bcTrendMetric" class="trend-metric-pick">
+                  <option value="weight_kg">Weight (kg)</option>
+                  <option value="body_fat_pct">Body fat %</option>
+                  <option value="skeletal_muscle_kg">Skeletal muscle (kg)</option>
+                  <option value="visceral_fat">Visceral fat</option>
+                  <option value="bmr">BMR (kcal)</option>
+                  <option value="body_water_pct">Body water %</option>
+                </select>
               </div>
               <div class="chart-wrap" id="bcWeightChartWrap">
                 <svg id="bcWeightChart" viewBox="0 0 720 220"></svg>
@@ -982,16 +1006,8 @@
           <div class="stack">
             <div class="card ledger-card">
               <h3 class="section-label">Results</h3>
-              <div class="section-sub">Grouped by category, each with its own freshness -- click a test to see its trend, edit or remove a result inline.</div>
+              <div class="section-sub">Click a category to open it, then a test to see its detail and trend.</div>
               <div id="labResultsGroups" style="margin-top:12px;"></div>
-              <div id="labTrendPanel" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
-                <div class="section-label" id="labTrendTitle" style="font-size:13.5px;"></div>
-                <div class="chart-wrap" id="labTrendChartWrap">
-                  <svg id="labTrendChart" viewBox="0 0 720 220"></svg>
-                  <div class="tooltip" id="labTrendTooltip"></div>
-                </div>
-                <div id="labTrendAbout" style="margin-top:8px;"></div>
-              </div>
             </div>
           </div>
           <div class="stack">
@@ -1015,6 +1031,11 @@
                   <button class="btn btn-primary" id="labConfirmBtn" style="padding:7px 14px; font-size:12px;">Save report</button>
                 </div>
               </div>
+            </div>
+            <div class="card ledger-card">
+              <h3 class="section-label">Uploaded reports</h3>
+              <div class="section-sub">Delete a whole scan at once instead of removing tests one by one.</div>
+              <div id="labReportList" style="margin-top:10px;"></div>
             </div>
             <div class="card quickadd-card">
               <h3 class="section-label">Categories</h3>
@@ -2378,6 +2399,8 @@
     deleteLabResult: function(id){ return fetch('/api/health/labs/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labSummary: function(){ return fetch('/api/health/labs/summary', {method:'POST'}).then(r=>r.json()); },
     askLab: function(question){ return fetch('/api/health/labs/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:question})}).then(r=>r.json()); },
+    labReports: function(){ return fetch('/api/health/labs/reports').then(r=>r.json()); },
+    deleteLabReport: function(id){ return fetch('/api/health/labs/reports/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labFreshness: function(){ return fetch('/api/health/labs/freshness').then(r=>r.json()); },
     documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
     uploadDocument: function(file, logDate){
@@ -2437,7 +2460,7 @@
 
   var healthState = {
     booted: false, labCategories: [], labResults: [], labFreshness: {}, bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null,
-    supplements: [], editingBcId: null, editingSuppId: null,
+    supplements: [], editingBcId: null, editingSuppId: null, openLabCategory: null, openLabTest: null,
   };
 
   // ---- generic trend chart (parameterized version of drawKcalChart, so
@@ -2524,13 +2547,29 @@
     return v == null ? '--' : Number(v).toFixed(decimals == null ? 1 : decimals).replace(/\.0+$/, '');
   }
 
+  var BC_METRIC_META = {
+    weight_kg: {label: 'Weight trend', unit: ' kg', color: 'var(--accent)'},
+    body_fat_pct: {label: 'Body fat % trend', unit: ' %', color: 'var(--amber)'},
+    skeletal_muscle_kg: {label: 'Skeletal muscle trend', unit: ' kg', color: 'var(--protein)'},
+    visceral_fat: {label: 'Visceral fat trend', unit: '', color: 'var(--critical)'},
+    bmr: {label: 'BMR trend', unit: ' kcal', color: 'var(--carbs)'},
+    body_water_pct: {label: 'Body water % trend', unit: ' %', color: 'var(--fiber)'},
+  };
+  function renderBcTrendChart(){
+    var metric = document.getElementById('bcTrendMetric').value;
+    var meta = BC_METRIC_META[metric];
+    document.getElementById('bcTrendTitle').textContent = meta.label;
+    var series = healthState.bodyCompEntries.slice(0, 30).filter(function(e){ return e[metric] != null; })
+      .reverse().map(function(e){ return {d: e.log_date, v: e[metric]}; });
+    drawHealthTrendChart('bcWeightChart', 'bcWeightTooltip', 'bcWeightChartWrap', series, meta.unit, meta.color);
+  }
+  document.getElementById('bcTrendMetric').addEventListener('change', renderBcTrendChart);
+
   function loadBodyComp(){
     loadBodyCompFreshness();
     return healthApi.bodyCompList().then(function(entries){
       healthState.bodyCompEntries = entries;
-      var series = entries.slice(0, 30).filter(function(e){ return e.weight_kg != null; })
-        .reverse().map(function(e){ return {d: e.log_date, v: e.weight_kg}; });
-      drawHealthTrendChart('bcWeightChart', 'bcWeightTooltip', 'bcWeightChartWrap', series, ' kg', 'var(--accent)');
+      renderBcTrendChart();
 
       var list = document.getElementById('bcEntryList');
       if(entries.length === 0){
@@ -2845,6 +2884,7 @@
       document.getElementById('labUploadCaption').value = '';
       pendingLabFile = null;
       loadLabResults();
+      loadLabReports();
     });
   });
 
@@ -2857,6 +2897,10 @@
       });
     });
   }
+  // Accordion: one category open at a time, one test's detail open at a
+  // time within it -- switching category or re-clicking the open test
+  // closes what was open, so a long results list doesn't turn into an
+  // ever-growing scroll of expanded charts.
   function renderLabResults(){
     var groups = {};
     healthState.labResults.forEach(function(r){
@@ -2875,9 +2919,12 @@
         seen[r.test_name] = true; return true;
       });
       var chip = freshnessChipHTML(healthState.labFreshness[cat.key], 'panel');
-      return '<div class="lab-cat-group"><div class="lab-cat-title">'+cat.label+'</div>' + chip +
-        latest.map(function(r){
-          return '<div class="lab-row" data-test="'+r.test_name.replace(/"/g,'&quot;')+'" data-id="'+r.id+'">' +
+      var isOpen = healthState.openLabCategory === cat.key;
+      var body = '';
+      if(isOpen){
+        body = '<div class="lab-cat-body">' + latest.map(function(r){
+          var rowOpen = healthState.openLabTest === r.test_name;
+          var row = '<div class="lab-row'+(rowOpen?' open':'')+'" data-test="'+r.test_name.replace(/"/g,'&quot;')+'" data-id="'+r.id+'">' +
             '<span class="ltname">'+r.test_name+'</span>' +
             '<span class="ltval" data-id="'+r.id+'">'+(r.value != null ? r.value + (r.unit||'') : (r.ref_text||'--'))+'</span>' +
             '<span class="flag-badge '+r.flag+'">'+r.flag+'</span>' +
@@ -2887,12 +2934,34 @@
               '<button class="icon-btn danger lab-del-btn" data-id="'+r.id+'" aria-label="Delete result">'+TRASH_ICON+'</button>' +
             '</span>' +
             '</div>';
+          if(rowOpen) row += labDetailHTML(r);
+          return row;
         }).join('') + '</div>';
+      }
+      return '<div class="lab-cat-group">' +
+        '<button type="button" class="lab-cat-header" data-category="'+cat.key+'">' +
+          '<svg class="lab-cat-chevron'+(isOpen?' open':'')+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>' +
+          '<span class="lab-cat-title">'+cat.label+'</span>' +
+          '<span class="lab-cat-count">'+latest.length+' test'+(latest.length===1?'':'s')+'</span>' +
+        '</button>' + chip + body +
+        '</div>';
     }).join('');
+
+    el.querySelectorAll('.lab-cat-header').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var key = btn.dataset.category;
+        healthState.openLabCategory = healthState.openLabCategory === key ? null : key;
+        healthState.openLabTest = null;
+        renderLabResults();
+      });
+    });
     el.querySelectorAll('.lab-row[data-test]').forEach(function(row){
       row.addEventListener('click', function(e){
         if(e.target.closest('.row-actions')) return;
-        showLabTrend(row.dataset.test);
+        var name = row.dataset.test;
+        healthState.openLabTest = healthState.openLabTest === name ? null : name;
+        renderLabResults();
+        if(healthState.openLabTest) loadLabTrendDetail(healthState.openLabTest);
       });
     });
     el.querySelectorAll('.lab-edit-btn').forEach(function(btn){
@@ -2908,6 +2977,26 @@
       });
     });
   }
+
+  function labDetailHTML(r){
+    var refText = r.ref_text || ((r.ref_low != null || r.ref_high != null) ?
+      (fmtNum(r.ref_low) + ' - ' + fmtNum(r.ref_high) + (r.unit ? (' ' + r.unit) : '')) : null);
+    var rows = '<div class="lab-detail-row"><span>Latest value</span><b>'+
+      (r.value != null ? r.value + (r.unit||'') : (r.ref_text||'--'))+'</b></div>' +
+      '<div class="lab-detail-row"><span>Status</span><span class="flag-badge '+r.flag+'">'+r.flag+'</span></div>' +
+      (refText ? '<div class="lab-detail-row"><span>Reference range</span><b>'+refText+'</b></div>' : '');
+    var notes = '';
+    if(r.description) notes += '<div class="lab-detail-note"><b>What it measures:</b> '+r.description+'</div>';
+    if(r.how_to_read) notes += '<div class="lab-detail-note"><b>How to read it:</b> '+r.how_to_read+'</div>';
+    return '<div class="lab-detail" id="labDetail">' + rows + notes +
+      '<div class="chart-wrap" id="labTrendChartWrap" style="display:none;">' +
+        '<svg id="labTrendChart" viewBox="0 0 720 220"></svg>' +
+        '<div class="tooltip" id="labTrendTooltip"></div>' +
+      '</div>' +
+      '<div id="labTrendNote" style="margin-top:8px;"></div>' +
+      '</div>';
+  }
+
   function startEditLabResult(id){
     var row = document.querySelector('.ltval[data-id="'+id+'"]');
     if(!row || row.querySelector('input')) return;
@@ -2926,20 +3015,24 @@
     });
     input.addEventListener('blur', commit);
   }
-  function showLabTrend(testName){
+
+  function loadLabTrendDetail(testName){
     healthApi.labResultsFor(testName).then(function(results){
+      var chartWrap = document.getElementById('labTrendChartWrap');
+      var noteEl = document.getElementById('labTrendNote');
+      if(!chartWrap || !noteEl) return; // panel got closed/re-rendered before this resolved
       var series = results.slice().reverse().filter(function(r){ return r.value != null; })
         .map(function(r){ return {d: r.test_date, v: r.value}; });
-      var last = results[0] || {};
-      document.getElementById('labTrendPanel').style.display = 'block';
-      document.getElementById('labTrendTitle').textContent = testName + (last.unit ? ' (' + last.unit + ')' : '');
+      if(series.length < 2){
+        chartWrap.style.display = 'none';
+        noteEl.innerHTML = '<div class="empty-note">Log this test again to see a trend over time.</div>';
+        return;
+      }
+      var last = results[0];
+      chartWrap.style.display = '';
+      noteEl.innerHTML = '';
       drawHealthTrendChart('labTrendChart', 'labTrendTooltip', 'labTrendChartWrap', series, last.unit ? ' '+last.unit : '',
         'var(--amber)', {low: last.ref_low, high: last.ref_high});
-      var aboutEl = document.getElementById('labTrendAbout');
-      var aboutBits = [];
-      if(last.description) aboutBits.push('<div><b>What it measures:</b> '+last.description+'</div>');
-      if(last.how_to_read) aboutBits.push('<div><b>How to read it:</b> '+last.how_to_read+'</div>');
-      aboutEl.innerHTML = aboutBits.length ? '<div class="lab-trend-about">'+aboutBits.join('')+'</div>' : '';
     });
   }
 
@@ -3000,6 +3093,31 @@
       el.innerHTML = docs.map(function(d){
         return '<div class="doc-row"><span class="docname">'+d.label+'</span><span class="docdate">'+d.log_date+'</span></div>';
       }).join('');
+    });
+  }
+
+  // ---- uploaded lab reports (whole-scan delete) ----
+  function loadLabReports(){
+    healthApi.labReports().then(function(reports){
+      var el = document.getElementById('labReportList');
+      if(reports.length === 0){ el.innerHTML = '<div class="empty-note">No reports uploaded yet.</div>'; return; }
+      el.innerHTML = reports.map(function(r){
+        return '<div class="doc-row" data-id="'+r.id+'">' +
+          '<span class="docname">'+(r.label || 'Lab report')+'</span>' +
+          '<span class="docdate">'+r.log_date+'</span>' +
+          '<span class="row-actions"><button class="icon-btn danger lab-report-del-btn" data-id="'+r.id+'" aria-label="Delete report">'+TRASH_ICON+'</button></span>' +
+          '</div>';
+      }).join('');
+      el.querySelectorAll('.lab-report-del-btn').forEach(function(btn){
+        btn.addEventListener('click', function(){
+          healthApi.deleteLabReport(parseInt(btn.dataset.id, 10)).then(function(){
+            toast('Report deleted.');
+            loadLabReports();
+            healthState.openLabCategory = null; healthState.openLabTest = null;
+            loadLabResults();
+          });
+        });
+      });
     });
   }
 
@@ -3219,6 +3337,7 @@
     healthState.booted = true;
     loadBodyComp();
     loadLabCategories().then(function(){ loadLabResults(); });
+    loadLabReports();
     loadDocuments();
     loadWaterToday();
     loadSuppNutrientOptions();
