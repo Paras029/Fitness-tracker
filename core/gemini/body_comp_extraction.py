@@ -75,14 +75,22 @@ _RESPONSE_SCHEMA = {
 }
 
 
-def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None):
-    """Returns the parsed dict described above, or None on total failure."""
+def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None, caption=None):
+    """Returns the parsed dict described above, or None on total failure.
+    caption is optional free text the user typed alongside the upload --
+    used for context only, never to override what's on the scan itself."""
     file_bytes = pdf_bytes or image_bytes
     if not file_bytes or not mime_type:
         return None
 
+    instructions = _INSTRUCTIONS
+    if caption:
+        instructions += (
+            f'\n\nThe user added this note about the upload: "{caption}" -- use it for context '
+            "but never let it override what's actually printed on the scan."
+        )
     parts = [
-        {"text": _INSTRUCTIONS},
+        {"text": instructions},
         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode("ascii")}},
     ]
 

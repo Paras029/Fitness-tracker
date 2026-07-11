@@ -58,10 +58,11 @@ def body_comp_extract():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "no file uploaded"}), 400
+    caption = request.form.get("caption") or None
     file_bytes = file.read()
     mime_type = file.mimetype or "application/octet-stream"
     kwargs = {"pdf_bytes": file_bytes} if mime_type == "application/pdf" else {"image_bytes": file_bytes}
-    draft = health_service.extract_body_comp_scan(mime_type=mime_type, **kwargs)
+    draft = health_service.extract_body_comp_scan(mime_type=mime_type, caption=caption, **kwargs)
     return jsonify(draft)
 
 
@@ -121,10 +122,11 @@ def labs_extract():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "no file uploaded"}), 400
+    caption = request.form.get("caption") or None
     file_bytes = file.read()
     mime_type = file.mimetype or "application/octet-stream"
     kwargs = {"pdf_bytes": file_bytes} if mime_type == "application/pdf" else {"image_bytes": file_bytes}
-    draft = health_service.extract_lab_report(mime_type=mime_type, **kwargs)
+    draft = health_service.extract_lab_report(mime_type=mime_type, caption=caption, **kwargs)
     return jsonify(draft)
 
 
@@ -200,8 +202,11 @@ def post_document():
         return jsonify({"error": "no file uploaded"}), 400
     label = request.form.get("label") or file.filename or "Document"
     notes = request.form.get("notes")
+    log_date = request.form.get("log_date") or None
     file_path, mime_type = _save_upload(file)
-    doc_id = health_db.create_other_document(file_path=file_path, mime_type=mime_type, label=label, notes=notes)
+    doc_id = health_db.create_other_document(
+        file_path=file_path, mime_type=mime_type, label=label, notes=notes, log_date=log_date,
+    )
     return jsonify({"id": doc_id})
 
 

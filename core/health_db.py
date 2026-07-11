@@ -235,13 +235,25 @@ def list_lab_categories(enabled_only=False):
 
 
 def create_lab_category(key, label, sort_order=None):
+    """New categories slot in just above "other" (the catch-all, always
+    meant to be last) rather than appending after it -- otherwise every
+    category you add would keep landing below the one bucket that should
+    always be at the bottom."""
     key = key.strip().lower().replace(" ", "_")
     if not key:
         raise ValueError("lab category key cannot be empty")
     with db.get_conn() as conn:
         if sort_order is None:
-            row = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM lab_categories").fetchone()
-            sort_order = row["n"]
+            other = conn.execute("SELECT sort_order FROM lab_categories WHERE key='other'").fetchone()
+            if other is not None:
+                sort_order = other["sort_order"]
+                conn.execute(
+                    "UPDATE lab_categories SET sort_order = sort_order + 1 WHERE sort_order >= ?",
+                    (sort_order,),
+                )
+            else:
+                row = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM lab_categories").fetchone()
+                sort_order = row["n"]
         conn.execute(
             "INSERT INTO lab_categories (key, label, enabled, sort_order) VALUES (?,?,1,?)",
             (key, label, sort_order),

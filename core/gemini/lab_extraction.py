@@ -70,16 +70,26 @@ _RESPONSE_SCHEMA = {
 }
 
 
-def extract_lab_results(pdf_bytes=None, image_bytes=None, mime_type=None):
+def extract_lab_results(pdf_bytes=None, image_bytes=None, mime_type=None, caption=None):
     """Returns the parsed dict described above, or None on total failure
     (caller should treat that as "couldn't parse, ask the user to retry
-    with a clearer scan")."""
+    with a clearer scan"). caption is optional free text the user typed
+    alongside the upload (e.g. "this is a follow-up thyroid panel, ignore
+    the first page") -- used to disambiguate, never to override what's
+    actually printed on the document."""
     file_bytes = pdf_bytes or image_bytes
     if not file_bytes or not mime_type:
         return None
 
+    instructions = _INSTRUCTIONS
+    if caption:
+        instructions += (
+            f'\n\nThe user added this note about the upload: "{caption}" -- use it for context '
+            "(e.g. which panel this is, what to focus on) but never let it override what's "
+            "actually printed on the document."
+        )
     parts = [
-        {"text": _INSTRUCTIONS},
+        {"text": instructions},
         {"inline_data": {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode("ascii")}},
     ]
 

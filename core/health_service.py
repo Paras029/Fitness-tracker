@@ -9,12 +9,20 @@ from datetime import datetime, timedelta
 
 from core import db, health_db
 
-# How often a BCA scan / lab panel should reasonably be redone. Labs get a
-# shorter interval if the latest panel had anything flagged out of range --
-# that's worth rechecking sooner than a routine "everything's normal" panel.
-BODY_COMP_FRESHNESS_DAYS = 30
+# How often each kind of measurement should reasonably be redone. Weight
+# is expected to be logged often (a quick check-in cadence); the full
+# detailed BCA breakdown (body fat/muscle/visceral/BMR/water) happens far
+# less often, hence its own longer interval. Labs get a shorter interval
+# if the latest panel in that category had anything flagged out of range
+# -- worth rechecking sooner than a routine "everything's normal" panel.
+WEIGHT_FRESHNESS_DAYS = 14
+BODY_COMP_DETAILED_FRESHNESS_DAYS = 30
 LAB_FRESHNESS_DAYS = 90
 LAB_FRESHNESS_DAYS_IF_FLAGGED = 30
+
+_DETAILED_BODY_COMP_FIELDS = (
+    "body_fat_pct", "skeletal_muscle_kg", "visceral_fat", "bmr", "body_water_pct",
+)
 
 
 def _freshness(last_date, interval_days):
@@ -31,22 +39,39 @@ def _freshness(last_date, interval_days):
 
 
 def get_body_comp_freshness():
-    entries = health_db.list_body_comp_entries(limit=1)
-    last_date = entries[0]["log_date"] if entries else None
-    return _freshness(last_date, BODY_COMP_FRESHNESS_DAYS)
+    """Tracked separately because they happen on very different cadences --
+    a quick weigh-in doesn't mean the detailed breakdown is up to date, and
+    vice versa (uploading a full scan should count as a fresh weigh-in
+    too, since it always includes weight)."""
+    entries = health_db.list_body_comp_entries()
+    weight_date = next((e["log_date"] for e in entries if e["weight_kg"] is not None), None)
+    detailed_date = next(
+        (e["log_date"] for e in entries if any(e[f] is not None for f in _DETAILED_BODY_COMP_FIELDS)), None,
+    )
+    return {
+        "weight": _freshness(weight_date, WEIGHT_FRESHNESS_DAYS),
+        "detailed": _freshness(detailed_date, BODY_COMP_DETAILED_FRESHNESS_DAYS),
+    }
 
 
 def get_lab_freshness():
-    reports = health_db.list_lab_reports()
-    if not reports:
-        return _freshness(None, LAB_FRESHNESS_DAYS)
-    latest = reports[0]  # list_lab_reports() orders by uploaded_at DESC
+    """Per lab category, not one blanket number -- redoing just a lipid
+    panel shouldn't make the kidney panel look freshly checked. Only
+    categories with at least one result are included."""
     results = health_db.list_lab_results()
-    flagged = any(r["report_id"] == latest["id"] and r["flag"] != "normal" for r in results)
-    interval = LAB_FRESHNESS_DAYS_IF_FLAGGED if flagged else LAB_FRESHNESS_DAYS
-    freshness = _freshness(latest["log_date"], interval)
-    freshness["flagged"] = flagged
-    return freshness
+    by_category = {}
+    for r in results:
+        by_category.setdefault(r["category_key"], []).append(r)
+
+    out = {}
+    for category_key, rows in by_category.items():
+        latest_date = max(r["test_date"] for r in rows)
+        flagged = any(r["test_date"] == latest_date and r["flag"] != "normal" for r in rows)
+        interval = LAB_FRESHNESS_DAYS_IF_FLAGGED if flagged else LAB_FRESHNESS_DAYS
+        freshness = _freshness(latest_date, interval)
+        freshness["flagged"] = flagged
+        out[category_key] = freshness
+    return out
 
 
 def _closest_category_key(hint, categories):
@@ -79,12 +104,14 @@ def _compute_flag(value, ref_low, ref_high):
     return "normal"
 
 
-def extract_lab_report(pdf_bytes=None, image_bytes=None, mime_type=None):
+def extract_lab_report(pdf_bytes=None, image_bytes=None, mime_type=None, caption=None):
     """Stage 1: parse the uploaded report into a draft. Never persists --
     caller reviews/edits the draft, then calls confirm_lab_report()."""
     from core import gemini
 
-    extraction = gemini.extract_lab_results(pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type)
+    extraction = gemini.extract_lab_results(
+        pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type, caption=caption,
+    )
     if extraction is None:
         return {"tests": [], "error": "Couldn't parse this report -- check GEMINI_API_KEY / quota with "
                                        "python -m scripts.check_setup, or try a clearer scan."}
@@ -153,13 +180,15 @@ def log_body_comp(weight_kg=None, body_fat_pct=None, skeletal_muscle_kg=None,
     )
 
 
-def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None):
+def extract_body_comp_scan(pdf_bytes=None, image_bytes=None, mime_type=None, caption=None):
     """Parses an uploaded scan into fields the entry form can prefill --
     never persists. The user reviews/edits before hitting Save, same as
     the manual-entry path (log_body_comp), just pre-filled."""
     from core import gemini
 
-    extraction = gemini.extract_body_comp_scan(pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type)
+    extraction = gemini.extract_body_comp_scan(
+        pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type, caption=caption,
+    )
     if extraction is None:
         return {"error": "Couldn't parse this scan -- check GEMINI_API_KEY / quota with "
                           "python -m scripts.check_setup, or try a clearer photo."}

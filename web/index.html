@@ -923,14 +923,6 @@
               <div id="bcSegmentPanel" style="margin-top:12px;"></div>
             </div>
 
-            <div class="card bc-summary-card">
-              <div class="trend-head">
-                <h3 class="section-label">AI score &amp; summary</h3>
-                <button class="btn btn-ghost" id="bcSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
-              </div>
-              <div id="bcSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Log an entry, then generate a summary for it.</div></div>
-            </div>
-
             <div class="card ledger-card">
               <h3 class="section-label">Entries</h3>
               <div id="bcEntryList" style="margin-top:10px;"></div>
@@ -940,7 +932,8 @@
             <div class="card quickadd-card">
               <h3 class="section-label">Log a weigh-in / scan</h3>
               <div class="section-sub">Upload an InBody-style scan or smart-scale screenshot to prefill this, or enter values manually.</div>
-              <div id="bcFreshness"></div>
+              <div id="bcFreshnessWeight"></div>
+              <div id="bcFreshnessDetailed"></div>
               <div class="quickadd-row" style="margin-top:12px;">
                 <button class="btn btn-ghost" id="bcUploadBtn" style="flex:1; justify-content:center;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -948,8 +941,12 @@
                 </button>
                 <input type="file" id="bcUploadInput" accept="image/*,application/pdf" style="display:none;">
               </div>
-              <div class="miss" id="bcUploadNote" style="margin-top:6px;"></div>
-              <div class="field" style="margin-top:12px;"><label>Weight (kg)</label><input id="bcWeight" type="number" step="any"></div>
+              <div class="field" style="margin-top:8px;"><input id="bcUploadCaption" type="text" placeholder="Optional context for the AI, e.g. \"fasted morning weigh-in\""></div>
+              <div class="miss" id="bcUploadNote"></div>
+              <div class="field-row" style="margin-top:12px;">
+                <div class="field"><label>Date</label><input id="bcLogDate" type="date"></div>
+                <div class="field"><label>Weight (kg)</label><input id="bcWeight" type="number" step="any"></div>
+              </div>
               <div class="field-row">
                 <div class="field"><label>Body fat %</label><input id="bcBodyFat" type="number" step="any"></div>
                 <div class="field"><label>Skeletal muscle (kg)</label><input id="bcMuscle" type="number" step="any"></div>
@@ -960,6 +957,14 @@
               </div>
               <div class="field"><label>Body water %</label><input id="bcWater" type="number" step="any"></div>
               <button class="btn btn-primary" id="bcSaveBtn" style="margin-top:6px; width:100%; justify-content:center;">Save entry</button>
+            </div>
+
+            <div class="card bc-summary-card">
+              <div class="trend-head">
+                <h3 class="section-label">AI score &amp; summary</h3>
+                <button class="btn btn-ghost" id="bcSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
+              </div>
+              <div id="bcSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Log an entry, then generate a summary for it.</div></div>
             </div>
           </div>
         </div>
@@ -973,29 +978,9 @@
         </div>
         <div class="body-grid">
           <div class="stack">
-            <div class="card quickadd-card">
-              <h3 class="section-label">Upload a lab report</h3>
-              <div class="section-sub">PDF or photo of a blood panel -- Gemini reads every test off it, you review before saving.</div>
-              <div id="labFreshness"></div>
-              <div class="quickadd-row" style="margin-top:12px;">
-                <button class="btn btn-ghost" id="labUploadBtn" style="flex:1; justify-content:center;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
-                  Upload PDF or photo
-                </button>
-                <input type="file" id="labUploadInput" accept="image/*,application/pdf" style="display:none;">
-              </div>
-              <div class="parsed" id="labDraftBox">
-                <div class="ph">Extracted tests -- review, then save</div>
-                <div id="labDraftRows"></div>
-                <div class="parsed-actions">
-                  <span class="miss" id="labDraftNote"></span>
-                  <button class="btn btn-primary" id="labConfirmBtn" style="padding:7px 14px; font-size:12px;">Save report</button>
-                </div>
-              </div>
-            </div>
             <div class="card ledger-card">
               <h3 class="section-label">Results</h3>
-              <div class="section-sub">Grouped by category -- click a test to see its trend, edit or remove a result inline.</div>
+              <div class="section-sub">Grouped by category, each with its own freshness -- click a test to see its trend, edit or remove a result inline.</div>
               <div id="labResultsGroups" style="margin-top:12px;"></div>
               <div id="labTrendPanel" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid var(--line);">
                 <div class="section-label" id="labTrendTitle" style="font-size:13.5px;"></div>
@@ -1005,18 +990,32 @@
                 </div>
               </div>
             </div>
-            <div class="card bc-summary-card">
-              <div class="trend-head">
-                <h3 class="section-label">AI summary</h3>
-                <button class="btn btn-ghost" id="labSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
-              </div>
-              <div id="labSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Upload a report, then generate a summary across your current results.</div></div>
-            </div>
           </div>
           <div class="stack">
             <div class="card quickadd-card">
+              <h3 class="section-label">Upload a lab report</h3>
+              <div class="section-sub">PDF or photo of a blood panel -- Gemini reads every test off it, you review before saving.</div>
+              <div class="quickadd-row" style="margin-top:12px;">
+                <button class="btn btn-ghost" id="labUploadBtn" style="flex:1; justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
+                  Upload PDF or photo
+                </button>
+                <input type="file" id="labUploadInput" accept="image/*,application/pdf" style="display:none;">
+              </div>
+              <div class="field" style="margin-top:8px;"><input id="labUploadCaption" type="text" placeholder="Optional context for the AI, e.g. \"lipid panel only, page 2\""></div>
+              <div class="parsed" id="labDraftBox">
+                <div class="ph">Extracted tests -- review, then save</div>
+                <div class="field"><label>Report date</label><input id="labDraftDate" type="date"></div>
+                <div id="labDraftRows"></div>
+                <div class="parsed-actions">
+                  <span class="miss" id="labDraftNote"></span>
+                  <button class="btn btn-primary" id="labConfirmBtn" style="padding:7px 14px; font-size:12px;">Save report</button>
+                </div>
+              </div>
+            </div>
+            <div class="card quickadd-card">
               <h3 class="section-label">Categories</h3>
-              <div class="section-sub">Built-in panels plus any you add -- new tests slot into these automatically.</div>
+              <div class="section-sub">Built-in panels plus any you add -- new ones slot in just above "Other".</div>
               <div id="labCategoryList" style="margin-top:10px;"></div>
               <div class="field" style="margin-top:10px;"><label>New category</label><input id="newLabCategory" type="text" placeholder="e.g. Thyroid"></div>
               <button class="btn btn-ghost" id="addLabCategoryBtn" style="margin-top:6px; padding:6px 12px; font-size:12px;">Add category</button>
@@ -1024,11 +1023,19 @@
             <div class="card quickadd-card">
               <h3 class="section-label">Other documents</h3>
               <div class="section-sub">Anything else worth keeping -- not parsed, just stored and labeled.</div>
-              <div class="quickadd-row" style="margin-top:10px;">
+              <div class="quickadd-row" style="margin-top:12px;">
                 <button class="btn btn-ghost" id="docUploadBtn" style="flex:1; justify-content:center;">Upload document</button>
                 <input type="file" id="docUploadInput" style="display:none;">
               </div>
+              <div class="field" style="margin-top:8px;"><label>Date (optional, for backdating)</label><input id="docUploadDate" type="date"></div>
               <div id="otherDocList" style="margin-top:10px;"></div>
+            </div>
+            <div class="card bc-summary-card">
+              <div class="trend-head">
+                <h3 class="section-label">AI summary</h3>
+                <button class="btn btn-ghost" id="labSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
+              </div>
+              <div id="labSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Upload a report, then generate a summary across your current results.</div></div>
             </div>
           </div>
         </div>
@@ -1043,16 +1050,16 @@
         <div class="body-grid">
           <div class="stack">
             <div class="card ledger-card">
-              <h3 class="section-label">Your list</h3>
-              <div class="section-sub">Tap Log to record today's dose.</div>
-              <div id="suppList" style="margin-top:10px;"></div>
-            </div>
-            <div class="card ledger-card">
               <h3 class="section-label">Today's log</h3>
               <div id="suppLogList" style="margin-top:10px;"></div>
             </div>
           </div>
           <div class="stack">
+            <div class="card ledger-card">
+              <h3 class="section-label">Your list</h3>
+              <div class="section-sub">Tap Log to record today's dose.</div>
+              <div id="suppList" style="margin-top:10px;"></div>
+            </div>
             <div class="card quickadd-card">
               <h3 class="section-label">Add a supplement or medicine</h3>
               <div class="field" style="margin-top:12px;"><label>Name</label><input id="newSuppName" type="text" placeholder="e.g. Vitamin D3"></div>
@@ -2327,8 +2334,9 @@
   var healthApi = {
     bodyCompList: function(){ return fetch('/api/health/body-comp').then(r=>r.json()); },
     createBodyComp: function(body){ return fetch('/api/health/body-comp', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
-    extractBodyComp: function(file){
+    extractBodyComp: function(file, caption){
       var fd = new FormData(); fd.append('file', file);
+      if(caption) fd.append('caption', caption);
       return fetch('/api/health/body-comp/extract', {method:'POST', body: fd}).then(r=>r.json());
     },
     bodyCompSummary: function(entryId){ return fetch('/api/health/body-comp/' + entryId + '/summary', {method:'POST'}).then(r=>r.json()); },
@@ -2338,8 +2346,9 @@
     labCategories: function(){ return fetch('/api/health/lab-categories').then(r=>r.json()); },
     createLabCategory: function(body){ return fetch('/api/health/lab-categories', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json().then(data=>({ok:r.ok, data:data}))); },
     updateLabCategory: function(key, body){ return fetch('/api/health/lab-categories/' + key, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
-    extractLabReport: function(file){
+    extractLabReport: function(file, caption){
       var fd = new FormData(); fd.append('file', file);
+      if(caption) fd.append('caption', caption);
       return fetch('/api/health/labs/extract', {method:'POST', body: fd}).then(r=>r.json());
     },
     confirmLabReport: function(file, tests, reportDate, label){
@@ -2356,8 +2365,9 @@
     labSummary: function(){ return fetch('/api/health/labs/summary', {method:'POST'}).then(r=>r.json()); },
     labFreshness: function(){ return fetch('/api/health/labs/freshness').then(r=>r.json()); },
     documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
-    uploadDocument: function(file){
+    uploadDocument: function(file, logDate){
       var fd = new FormData(); fd.append('file', file);
+      if(logDate) fd.append('log_date', logDate);
       return fetch('/api/health/documents', {method:'POST', body: fd}).then(r=>r.json());
     },
     waterToday: function(){ return fetch('/api/health/water').then(r=>r.json()); },
@@ -2377,14 +2387,11 @@
   var TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>';
   var EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 
-  // ---- freshness chips (BCA / labs "time to redo this?" indicator) ----
-  function renderFreshnessChip(elId, data, noun){
-    var el = document.getElementById(elId);
-    if(!el) return;
-    if(!data || data.last_date == null){
-      el.innerHTML = '';
-      return;
-    }
+  // ---- freshness chips ("time to redo this?" indicator) -- used for
+  // BCA (weight vs detailed metrics, tracked separately) and for labs
+  // (one per category, shown inline next to that category's results). ----
+  function freshnessChipHTML(data, noun){
+    if(!data || data.last_date == null) return '';
     var frac = data.days_since / data.interval_days;
     var level = data.stale ? 'critical' : (frac >= 0.7 ? 'warning' : 'good');
     var flaggedNote = data.flagged ? ' -- shortened to ' + data.interval_days + ' days since something was flagged last time' : '';
@@ -2394,17 +2401,27 @@
     } else {
       text = 'Last ' + noun + ' <b>' + data.days_since + ' days ago</b> -- next around <b>' + data.next_due_date + '</b>' + flaggedNote + '.';
     }
-    el.innerHTML = '<div class="freshness-chip ' + level + '"><span class="fc-dot"></span><span>' + text + '</span></div>';
+    return '<div class="freshness-chip ' + level + '"><span class="fc-dot"></span><span>' + text + '</span></div>';
+  }
+  function renderFreshnessChip(elId, data, noun){
+    var el = document.getElementById(elId);
+    if(el) el.innerHTML = freshnessChipHTML(data, noun);
   }
   function loadBodyCompFreshness(){
-    healthApi.bodyCompFreshness().then(function(data){ renderFreshnessChip('bcFreshness', data, 'scan'); });
+    healthApi.bodyCompFreshness().then(function(data){
+      renderFreshnessChip('bcFreshnessWeight', data.weight, 'weigh-in');
+      renderFreshnessChip('bcFreshnessDetailed', data.detailed, 'detailed scan');
+    });
   }
   function loadLabFreshness(){
-    healthApi.labFreshness().then(function(data){ renderFreshnessChip('labFreshness', data, 'panel'); });
+    return healthApi.labFreshness().then(function(data){
+      healthState.labFreshness = data;
+      return data;
+    });
   }
 
   var healthState = {
-    booted: false, labCategories: [], labResults: [], bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null,
+    booted: false, labCategories: [], labResults: [], labFreshness: {}, bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null,
     supplements: [], editingBcId: null, editingSuppId: null,
   };
 
@@ -2413,6 +2430,13 @@
   // is reused for weight / lab-value / water trends). Supports an
   // optional shaded reference band instead of a single dashed goal line,
   // for lab values that have a normal range rather than a single target. ----
+  // Days since the Unix epoch for a "YYYY-MM-DD" string, UTC-based so it's
+  // immune to the timezone pitfalls documented on shiftDate() above.
+  function dateToDayNum(iso){
+    var p = iso.split('-').map(Number);
+    return Date.UTC(p[0], p[1]-1, p[2]) / 86400000;
+  }
+
   function drawHealthTrendChart(svgId, tooltipId, wrapId, series, unit, color, band){
     color = color || 'var(--accent)'; unit = unit || '';
     var svg = document.getElementById(svgId);
@@ -2424,7 +2448,14 @@
     var max = Math.max.apply(null, vals.concat([1])) * 1.08;
     var min = Math.max(Math.min.apply(null, vals) * 0.9, 0);
     var innerW = W-PAD_L-PAD_R, innerH = H-PAD_T-PAD_B;
-    function X(i){ return PAD_L + (series.length<=1?0:i/(series.length-1))*innerW; }
+    // X is spaced by actual elapsed time, not by point index -- two tests a
+    // month apart and two a year apart look visually different, which
+    // matters for lab/BCA history where gaps between entries are large and
+    // irregular (unlike nutrition/water's daily cadence).
+    var dayVals = series.map(function(d){ return dateToDayNum(d.d); });
+    var dayMin = Math.min.apply(null, dayVals), dayMax = Math.max.apply(null, dayVals);
+    var dayRange = dayMax - dayMin;
+    function X(i){ return PAD_L + (dayRange<=0?0:(dayVals[i]-dayMin)/dayRange)*innerW; }
     function Y(v){ return PAD_T + innerH - ((v-min)/((max-min)||1))*innerH; }
     var pts = series.map(function(d,i){ return [X(i), Y(d.v)]; });
     var linePath = pts.map(function(p,i){ return (i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ');
@@ -2454,7 +2485,13 @@
     hit.addEventListener('mousemove', function(e){
       var rect = svg.getBoundingClientRect();
       var mx = (e.clientX - rect.left) * (W/rect.width);
-      var i = Math.max(0, Math.min(series.length-1, Math.round((mx-PAD_L)/innerW*(series.length-1))));
+      // Points aren't evenly spaced (X is date-proportional), so find the
+      // nearest one by actual position rather than assuming a fixed step.
+      var i = 0, bestDist = Infinity;
+      for(var k=0;k<pts.length;k++){
+        var dist = Math.abs(pts[k][0]-mx);
+        if(dist < bestDist){ bestDist = dist; i = k; }
+      }
       var p = pts[i]; var wrapRect = wrap.getBoundingClientRect(); var scale = wrapRect.width/W;
       tip.style.left = (p[0]*scale)+'px'; tip.style.top = (p[1]*scale-54)+'px';
       tip.innerHTML = '<div class="t-title">'+series[i].d+'</div>'+series[i].v.toLocaleString('en-US')+unit;
@@ -2526,6 +2563,8 @@
     var entry = healthState.bodyCompEntries.find(function(e){ return e.id === id; });
     if(!entry) return;
     healthState.editingBcId = id;
+    pendingBcSource = entry.source;
+    document.getElementById('bcLogDate').value = entry.log_date;
     document.getElementById('bcWeight').value = entry.weight_kg != null ? entry.weight_kg : '';
     document.getElementById('bcBodyFat').value = entry.body_fat_pct != null ? entry.body_fat_pct : '';
     document.getElementById('bcMuscle').value = entry.skeletal_muscle_kg != null ? entry.skeletal_muscle_kg : '';
@@ -2544,6 +2583,8 @@
     healthState.editingBcId = null;
     pendingBcSegments = null; pendingBcSource = 'manual';
     BC_FIELD_IDS.forEach(function(id){ document.getElementById(id).value = ''; });
+    document.getElementById('bcLogDate').value = todayISO();
+    document.getElementById('bcUploadCaption').value = '';
     document.getElementById('bcSaveBtn').textContent = 'Save entry';
     document.getElementById('bcUploadNote').textContent = '';
   }
@@ -2554,8 +2595,9 @@
       weight_kg: val('bcWeight'), body_fat_pct: val('bcBodyFat'), skeletal_muscle_kg: val('bcMuscle'),
       visceral_fat: val('bcVisceral'), bmr: val('bcBmr'), body_water_pct: val('bcWater'),
       source: pendingBcSource, segments: pendingBcSegments,
+      log_date: document.getElementById('bcLogDate').value || todayISO(),
     };
-    if(Object.keys(body).every(function(k){ return k==='source'||k==='segments'||body[k]===null; })){
+    if(Object.keys(body).every(function(k){ return k==='source'||k==='segments'||k==='log_date'||body[k]===null; })){
       toast('Enter at least one value.'); return;
     }
     var isEdit = healthState.editingBcId != null;
@@ -2567,6 +2609,7 @@
     });
   }
   document.getElementById('bcSaveBtn').addEventListener('click', saveBodyComp);
+  document.getElementById('bcLogDate').value = todayISO();
 
   var bcUploadInput = document.getElementById('bcUploadInput');
   document.getElementById('bcUploadBtn').addEventListener('click', function(){ bcUploadInput.click(); });
@@ -2574,15 +2617,17 @@
     var file = bcUploadInput.files[0];
     if(!file) return;
     var note = document.getElementById('bcUploadNote');
+    var caption = document.getElementById('bcUploadCaption').value.trim();
     note.textContent = 'Reading scan…';
     note.classList.add('loading-pulse');
-    healthApi.extractBodyComp(file).then(function(draft){
+    healthApi.extractBodyComp(file, caption).then(function(draft){
       note.classList.remove('loading-pulse');
       if(draft.error){ note.textContent = draft.error; return; }
       var setVal = function(id, v){ document.getElementById(id).value = v == null ? '' : v; };
       setVal('bcWeight', draft.weight_kg); setVal('bcBodyFat', draft.body_fat_pct);
       setVal('bcMuscle', draft.skeletal_muscle_kg); setVal('bcVisceral', draft.visceral_fat);
       setVal('bcBmr', draft.bmr); setVal('bcWater', draft.body_water_pct);
+      if(draft.scan_date) document.getElementById('bcLogDate').value = draft.scan_date;
       pendingBcSegments = draft.segments || null;
       pendingBcSource = (file.type === 'application/pdf') ? 'pdf' : 'photo';
       note.textContent = 'Extracted from ' + file.name + (draft.segments ? ' (with segmental data)' : '') + ' -- review, then save.';
@@ -2727,11 +2772,12 @@
     var file = labUploadInput.files[0];
     if(!file) return;
     pendingLabFile = file;
+    var caption = document.getElementById('labUploadCaption').value.trim();
     var box = document.getElementById('labDraftBox');
     box.classList.add('show');
     document.getElementById('labDraftRows').innerHTML = '<div class="miss loading-pulse">Reading report…</div>';
     document.getElementById('labDraftNote').textContent = '';
-    healthApi.extractLabReport(file).then(function(draft){
+    healthApi.extractLabReport(file, caption).then(function(draft){
       renderLabDraft(draft);
     });
     labUploadInput.value = '';
@@ -2739,6 +2785,7 @@
 
   function renderLabDraft(draft){
     var rowsEl = document.getElementById('labDraftRows');
+    document.getElementById('labDraftDate').value = draft.report_date || todayISO();
     if(draft.error || !draft.tests || draft.tests.length === 0){
       rowsEl.innerHTML = '<div class="miss">'+(draft.error || 'No tests found in this report.')+'</div>';
       document.getElementById('labDraftNote').textContent = '';
@@ -2758,8 +2805,7 @@
       var idx = parseInt(row.dataset.idx, 10);
       row.querySelector('.ldr-cat').value = draft.tests[idx].category_key || 'other';
     });
-    document.getElementById('labDraftNote').textContent = draft.notes || (draft.report_date ? 'Report date: ' + draft.report_date : '');
-    document.getElementById('labDraftBox').dataset.reportDate = draft.report_date || '';
+    document.getElementById('labDraftNote').textContent = draft.notes || '';
   }
 
   document.getElementById('labConfirmBtn').addEventListener('click', function(){
@@ -2776,11 +2822,12 @@
         flag: row.querySelector('.flag-badge').textContent,
       };
     });
-    var reportDate = document.getElementById('labDraftBox').dataset.reportDate || null;
+    var reportDate = document.getElementById('labDraftDate').value || todayISO();
     healthApi.confirmLabReport(pendingLabFile, tests, reportDate, pendingLabFile.name).then(function(){
       toast('Lab report saved.');
       document.getElementById('labDraftBox').classList.remove('show');
       document.getElementById('labDraftRows').innerHTML = '';
+      document.getElementById('labUploadCaption').value = '';
       pendingLabFile = null;
       loadLabResults();
     });
@@ -2788,10 +2835,11 @@
 
   // ---- labs: grouped display + trend ----
   function loadLabResults(){
-    loadLabFreshness();
-    healthApi.labResults().then(function(results){
-      healthState.labResults = results;
-      renderLabResults();
+    loadLabFreshness().then(function(){
+      healthApi.labResults().then(function(results){
+        healthState.labResults = results;
+        renderLabResults();
+      });
     });
   }
   function renderLabResults(){
@@ -2802,7 +2850,7 @@
     var enabledCats = healthState.labCategories.filter(function(c){ return c.enabled; });
     var el = document.getElementById('labResultsGroups');
     if(healthState.labResults.length === 0){
-      el.innerHTML = '<div class="empty-note">No lab results yet -- upload a report above.</div>';
+      el.innerHTML = '<div class="empty-note">No lab results yet -- upload a report on the right.</div>';
       return;
     }
     el.innerHTML = enabledCats.filter(function(c){ return groups[c.key] && groups[c.key].length; }).map(function(cat){
@@ -2811,7 +2859,8 @@
         if(seen[r.test_name]) return false;
         seen[r.test_name] = true; return true;
       });
-      return '<div class="lab-cat-group"><div class="lab-cat-title">'+cat.label+'</div>' +
+      var chip = freshnessChipHTML(healthState.labFreshness[cat.key], 'panel');
+      return '<div class="lab-cat-group"><div class="lab-cat-title">'+cat.label+'</div>' + chip +
         latest.map(function(r){
           return '<div class="lab-row" data-test="'+r.test_name.replace(/"/g,'&quot;')+'" data-id="'+r.id+'">' +
             '<span class="ltname">'+r.test_name+'</span>' +
@@ -2895,7 +2944,12 @@
   docUploadInput.addEventListener('change', function(){
     var file = docUploadInput.files[0];
     if(!file) return;
-    healthApi.uploadDocument(file).then(function(){ toast('Document saved.'); loadDocuments(); });
+    var logDate = document.getElementById('docUploadDate').value || null;
+    healthApi.uploadDocument(file, logDate).then(function(){
+      toast('Document saved.');
+      document.getElementById('docUploadDate').value = '';
+      loadDocuments();
+    });
     docUploadInput.value = '';
   });
   function loadDocuments(){
