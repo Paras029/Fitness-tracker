@@ -54,6 +54,20 @@
                                           synthetic score, the reference-
                                           range flag is authority enough.
 
+  lab_categorization.py                  Maps extracted test names onto
+    categorize_lab_tests()               this install's actual lab
+                                          categories -- runs once after a
+                                          (possibly multi-chunk) report is
+                                          consolidated, rather than being
+                                          guessed per-chunk during
+                                          extraction.
+
+  lab_qa.py                              ON-DEMAND: answers a free-text
+    answer_lab_question()                question grounded in the user's
+                                          current lab results, including
+                                          any description/how_to_read text
+                                          captured from their reports.
+
   common.py                              Nutrient-key constants and
                                           schema helpers shared by fill.py
                                           and review.py.
@@ -69,7 +83,9 @@ from core.gemini.client import DEBUG, TIMEOUT, call as _call, extract_json as _e
 from core.gemini.common import CORE_MACRO_KEYS, NUTRIENT_KEYS
 from core.gemini.extraction import extract_ingredients
 from core.gemini.fill import fill_nutrition
+from core.gemini.lab_categorization import categorize_lab_tests
 from core.gemini.lab_extraction import extract_lab_results
+from core.gemini.lab_qa import answer_lab_question
 from core.gemini.lab_summary import generate_lab_summary
 from core.gemini.rating import (
     answer_question, generate_daily_report, generate_weekly_report, rate_meal, transcribe_voice,
@@ -90,6 +106,8 @@ __all__ = [
     "extract_body_comp_scan",
     "generate_body_comp_summary",
     "generate_lab_summary",
+    "categorize_lab_tests",
+    "answer_lab_question",
     "get_last_error",
     "NUTRIENT_KEYS",
     "CORE_MACRO_KEYS",

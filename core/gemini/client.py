@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import threading
 
 import requests
 
@@ -37,12 +38,15 @@ DEBUG = os.environ.get("GEMINI_DEBUG") == "1"
 # is exactly what the user needs to see instead of one generic message.
 # Rather than changing call()'s return contract everywhere, the specific
 # reason for the *last* failure is stashed here and callers that care can
-# read it right after a None comes back.
-_last_error = None
+# read it right after a None comes back. Thread-local (not a plain module
+# global) because chunked lab-report extraction runs several calls
+# concurrently on a thread pool -- a shared global would let one thread's
+# error silently clobber another's.
+_local = threading.local()
 
 
 def get_last_error():
-    return _last_error
+    return getattr(_local, "last_error", None)
 
 
 def call(parts, want_json=True, response_schema=None, max_output_tokens=None, use_search=False, timeout=None):
@@ -56,10 +60,9 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
     described JSON (parsed by extract_json's regex fallback below) rather
     than risk silently breaking. Callers should treat a grounded call as
     best-effort and retry ungrounded on failure -- see review.py."""
-    global _last_error
-    _last_error = None
+    _local.last_error = None
     if not config.GEMINI_API_KEY:
-        _last_error = "GEMINI_API_KEY is not set."
+        _local.last_error = "GEMINI_API_KEY is not set."
         log.warning("GEMINI_API_KEY is not set -- skipping Gemini call.")
         return None
     url = f"{_BASE}/{config.GEMINI_MODEL}:generateContent"
@@ -89,20 +92,20 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
         resp.raise_for_status()
         data = resp.json()
     except requests.exceptions.Timeout:
-        _last_error = f"Timed out waiting on Gemini after {timeout or TIMEOUT}s -- a large file (many pages / high-res photo) can take longer than that to process."
+        _local.last_error = f"Timed out waiting on Gemini after {timeout or TIMEOUT}s -- a large file (many pages / high-res photo) can take longer than that to process."
         log.warning("Gemini call to model '%s' timed out after %ss.", config.GEMINI_MODEL, timeout or TIMEOUT)
         return None
     except requests.RequestException as e:
         status = getattr(e.response, "status_code", None)
         detail = e.response.text if getattr(e, "response", None) is not None else str(e)
         if status == 429:
-            _last_error = "Gemini quota/rate limit hit (HTTP 429) -- wait a bit and retry, or check your plan's limits."
+            _local.last_error = "Gemini quota/rate limit hit (HTTP 429) -- wait a bit and retry, or check your plan's limits."
         elif status == 413 or (status == 400 and "large" in detail.lower()):
-            _last_error = "The upload is too large for Gemini's request size limit -- try a smaller file (fewer pages, lower-res scan, or split it up)."
+            _local.last_error = "The upload is too large for Gemini's request size limit -- try a smaller file (fewer pages, lower-res scan, or split it up)."
         elif status:
-            _last_error = f"Gemini request failed (HTTP {status}): {detail[:200]}"
+            _local.last_error = f"Gemini request failed (HTTP {status}): {detail[:200]}"
         else:
-            _last_error = f"Gemini request failed: {detail[:200]}"
+            _local.last_error = f"Gemini request failed: {detail[:200]}"
         log.warning("Gemini call to model '%s' failed: %s", config.GEMINI_MODEL, detail if DEBUG else detail[:300])
         return None
 
@@ -116,9 +119,9 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
         # or shorten the prompt), SAFETY / PROHIBITED_CONTENT (a food photo or
         # description tripped a safety filter), RECITATION.
         if finish_reason == "MAX_TOKENS":
-            _last_error = "Gemini's response got cut off before finishing (too much to extract in one go, e.g. a very long report) -- try uploading a shorter excerpt (just the pages you need) instead of the whole document."
+            _local.last_error = "Gemini's response got cut off before finishing (too much to extract in one go, e.g. a very long report) -- try uploading a shorter excerpt (just the pages you need) instead of the whole document."
         else:
-            _last_error = f"Gemini stopped early with reason '{finish_reason}' (often a safety filter on the file's content)."
+            _local.last_error = f"Gemini stopped early with reason '{finish_reason}' (often a safety filter on the file's content)."
         log.warning("Gemini finished with reason '%s' instead of a normal stop -- "
                     "this usually means the response was blocked or truncated, not a bug in the request.",
                     finish_reason)
@@ -126,8 +129,8 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
-        if not _last_error:
-            _last_error = "Gemini returned no usable response."
+        if not _local.last_error:
+            _local.last_error = "Gemini returned no usable response."
         log.warning("Gemini response had no usable candidate (finishReason=%s): %s",
                     finish_reason, json.dumps(data)[:300])
         return None
@@ -136,8 +139,8 @@ def call(parts, want_json=True, response_schema=None, max_output_tokens=None, us
         return text
     result = extract_json(text)
     if result is None:
-        if not _last_error:
-            _last_error = "Gemini's response wasn't valid JSON."
+        if not _local.last_error:
+            _local.last_error = "Gemini's response wasn't valid JSON."
         log.warning("Gemini response wasn't valid JSON: %s", text[:300])
     return result
 

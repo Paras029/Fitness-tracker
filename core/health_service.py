@@ -5,9 +5,10 @@ directly, mirroring the nutrition side's logging_service.py split.
 """
 
 import difflib
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from core import db, health_db
+from core import db, health_db, pdf_utils
 
 # How often each kind of measurement should reasonably be redone. Weight
 # is expected to be logged often (a quick check-in cadence); the full
@@ -31,6 +32,30 @@ _DETAILED_BODY_COMP_FIELDS = (
 # call that's going to fail anyway (a 44-page scanned PDF can easily be
 # this large).
 _MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+
+
+# A long PDF is split into page-range chunks and extracted with one
+# Gemini call per chunk, rather than one call for the whole thing (which
+# was truncating on anything long) or one call per page (which would burn
+# through a free-tier quota fast on a 40+ page document). The chunk size
+# adapts to length so the call count stays bounded regardless of how long
+# the report is -- a 10-page and a 100-page report both stay within
+# LAB_CHUNK_MAX_CALLS calls, just with proportionally bigger chunks.
+LAB_CHUNK_MAX_CALLS = 6
+LAB_CHUNK_MIN_PAGES = 6
+LAB_CHUNK_MAX_PAGES = 12
+# How many chunk calls run at once -- concurrency cuts wall-clock time
+# (the whole point, since these calls don't compete for the same quota
+# bucket any differently run serially vs in parallel) without raising the
+# total call count, which is the actual budget concern.
+LAB_CHUNK_WORKERS = 3
+
+
+def _lab_chunk_size(page_count):
+    if page_count <= LAB_CHUNK_MIN_PAGES:
+        return page_count
+    ideal = -(-page_count // LAB_CHUNK_MAX_CALLS)  # ceil division
+    return max(LAB_CHUNK_MIN_PAGES, min(LAB_CHUNK_MAX_PAGES, ideal))
 
 
 def _too_large_error(file_bytes):
@@ -121,40 +146,110 @@ def _compute_flag(value, ref_low, ref_high):
     return "normal"
 
 
+def _dedupe_tests(tests):
+    """Chunks can overlap slightly at page boundaries (a table split across
+    two pages) or repeat a summary-page result that's also detailed later
+    -- keep the first occurrence of each test_name, case/space-insensitive."""
+    seen, out = set(), []
+    for t in tests:
+        key = (t.get("test_name") or "").strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(t)
+    return out
+
+
+def _consolidate_report_date(dates):
+    if not dates:
+        return None
+    return max(set(dates), key=dates.count)  # majority vote; ties keep first-seen order
+
+
 def extract_lab_report(pdf_bytes=None, image_bytes=None, mime_type=None, caption=None):
     """Stage 1: parse the uploaded report into a draft. Never persists --
-    caller reviews/edits the draft, then calls confirm_lab_report()."""
+    caller reviews/edits the draft, then calls confirm_lab_report().
+
+    A multi-page PDF is split into chunks (see _lab_chunk_size) and each
+    chunk gets its own extraction call, run concurrently; results are
+    merged, deduped, and then run through one dedicated categorization
+    call against this install's real category list -- more accurate than
+    guessing categories per-chunk, since that call sees the whole
+    consolidated test list and the actual categories at once."""
     from core import gemini
 
-    too_large = _too_large_error(pdf_bytes or image_bytes)
+    file_bytes = pdf_bytes or image_bytes
+    too_large = _too_large_error(file_bytes)
     if too_large:
         return {"tests": [], "error": too_large}
 
-    extraction = gemini.extract_lab_results(
-        pdf_bytes=pdf_bytes, image_bytes=image_bytes, mime_type=mime_type, caption=caption,
-    )
-    if extraction is None:
-        detail = gemini.get_last_error()
-        return {"tests": [], "error": detail or
+    is_pdf = mime_type == "application/pdf" and pdf_bytes
+    if is_pdf:
+        page_count = pdf_utils.count_pdf_pages(pdf_bytes)
+        chunks = pdf_utils.split_pdf_pages(pdf_bytes, _lab_chunk_size(page_count)) if page_count else [pdf_bytes]
+    else:
+        chunks = [file_bytes]
+
+    def run_chunk(chunk_bytes):
+        kwargs = {"pdf_bytes": chunk_bytes} if is_pdf else {"image_bytes": chunk_bytes}
+        result = gemini.extract_lab_results(mime_type=mime_type, caption=caption, **kwargs)
+        return result, (gemini.get_last_error() if result is None else None)
+
+    if len(chunks) == 1:
+        chunk_results = [run_chunk(chunks[0])]
+    else:
+        with ThreadPoolExecutor(max_workers=LAB_CHUNK_WORKERS) as pool:
+            chunk_results = list(pool.map(run_chunk, chunks))
+
+    all_tests, report_dates, notes, chunk_errors = [], [], [], []
+    ok_count = 0
+    for result, error in chunk_results:
+        if result is None:
+            chunk_errors.append(error or "unknown error")
+            continue
+        ok_count += 1
+        all_tests.extend(result.get("tests", []))
+        if result.get("report_date"):
+            report_dates.append(result["report_date"])
+        if result.get("notes"):
+            notes.append(result["notes"])
+
+    if ok_count == 0:
+        return {"tests": [], "error": chunk_errors[0] if chunk_errors else
                 "Couldn't parse this report -- check GEMINI_API_KEY / quota with "
                 "python -m scripts.check_setup, or try a clearer scan."}
 
+    deduped = _dedupe_tests(all_tests)
     categories = health_db.list_lab_categories()
+    category_map = gemini.categorize_lab_tests(
+        [{"test_name": t.get("test_name"), "category_hint": t.get("category_hint")} for t in deduped],
+        categories,
+    )
+
     tests = []
-    for t in extraction.get("tests", []):
-        category_key = _closest_category_key(t.get("category_hint"), categories)
+    for t in deduped:
+        name = t.get("test_name")
+        category_key = category_map.get(name) or _closest_category_key(t.get("category_hint"), categories)
         flag = _compute_flag(t.get("value"), t.get("ref_low"), t.get("ref_high"))
         tests.append({
-            "test_name": t.get("test_name"), "category_key": category_key,
+            "test_name": name, "category_key": category_key,
             "value": t.get("value"), "unit": t.get("unit"),
             "ref_low": t.get("ref_low"), "ref_high": t.get("ref_high"),
             "ref_text": t.get("ref_text"), "flag": flag,
+            "description": t.get("description"), "how_to_read": t.get("how_to_read"),
         })
+
+    combined_notes = " ".join(notes) if notes else None
+    if len(chunks) > 1:
+        status = f"Processed {ok_count}/{len(chunks)} page-groups ({page_count} pages)."
+        if chunk_errors:
+            status += f" {len(chunk_errors)} group(s) failed and may be missing results: {chunk_errors[0]}"
+        combined_notes = (combined_notes + " " + status) if combined_notes else status
 
     return {
         "tests": tests,
-        "report_date": extraction.get("report_date"),
-        "notes": extraction.get("notes"),
+        "report_date": _consolidate_report_date(report_dates),
+        "notes": combined_notes,
     }
 
 
@@ -170,6 +265,7 @@ def confirm_lab_report(draft, file_path, mime_type, label=None):
             test_name=t["test_name"], value=t.get("value"), unit=t.get("unit"),
             ref_low=t.get("ref_low"), ref_high=t.get("ref_high"), ref_text=t.get("ref_text"),
             flag=t.get("flag", "normal"), test_date=test_date,
+            description=t.get("description"), how_to_read=t.get("how_to_read"),
         )
     return report_id
 
@@ -246,6 +342,29 @@ def get_lab_summary():
         return {"error": "Couldn't generate a summary -- check GEMINI_API_KEY / quota with "
                           "python -m scripts.check_setup."}
     return result
+
+
+def answer_lab_question(question):
+    """On-demand, one Gemini call per question -- grounded in the same
+    latest-value-per-test data get_lab_summary() uses, including any
+    description/how_to_read captured from the source reports."""
+    from core import gemini
+
+    results = health_db.list_lab_results()
+    if not results:
+        return {"error": "No lab results yet -- upload a report first."}
+    seen, latest = set(), []
+    for r in results:
+        if r["test_name"] in seen:
+            continue
+        seen.add(r["test_name"])
+        latest.append(r)
+
+    answer = gemini.answer_lab_question(question, latest)
+    if answer is None:
+        return {"error": "Couldn't get an answer -- check GEMINI_API_KEY / quota with "
+                          "python -m scripts.check_setup."}
+    return {"answer": answer}
 
 
 def get_body_comp_summary(entry_id, history_count=6):

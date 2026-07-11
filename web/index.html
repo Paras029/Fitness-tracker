@@ -583,6 +583,8 @@
 
   .bc-summary-card{ padding:18px 20px; }
   .bc-summary-empty{ font-size:12.5px; color:var(--ink-faint); }
+  .lab-trend-about{ font-size:12px; color:var(--ink-muted); line-height:1.6; padding:10px 12px; background:var(--paper-sunk); border-radius:8px; }
+  .lab-trend-about b{ color:var(--ink); }
 
   .freshness-chip{
     display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:6px 10px; border-radius:7px;
@@ -988,6 +990,7 @@
                   <svg id="labTrendChart" viewBox="0 0 720 220"></svg>
                   <div class="tooltip" id="labTrendTooltip"></div>
                 </div>
+                <div id="labTrendAbout" style="margin-top:8px;"></div>
               </div>
             </div>
           </div>
@@ -1036,6 +1039,17 @@
                 <button class="btn btn-ghost" id="labSummaryBtn" style="padding:6px 12px; font-size:12px;">Generate summary</button>
               </div>
               <div id="labSummaryBody" style="margin-top:10px;"><div class="bc-summary-empty">Upload a report, then generate a summary across your current results.</div></div>
+            </div>
+            <div class="card ask-card">
+              <h3 class="section-label" style="font-size:14.5px;">Ask about your labs</h3>
+              <div class="section-sub">Grounded in your current results, including any notes captured from your reports.</div>
+              <div class="thread" id="labThread" style="margin-top:10px;"></div>
+              <div class="ask-row">
+                <input type="text" id="labAskInput" placeholder="Ask a question…">
+                <button id="labAskSend" aria-label="Send">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2363,6 +2377,7 @@
     updateLabResult: function(id, body){ return fetch('/api/health/labs/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     deleteLabResult: function(id){ return fetch('/api/health/labs/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labSummary: function(){ return fetch('/api/health/labs/summary', {method:'POST'}).then(r=>r.json()); },
+    askLab: function(question){ return fetch('/api/health/labs/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({question:question})}).then(r=>r.json()); },
     labFreshness: function(){ return fetch('/api/health/labs/freshness').then(r=>r.json()); },
     documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
     uploadDocument: function(file, logDate){
@@ -2775,7 +2790,7 @@
     var caption = document.getElementById('labUploadCaption').value.trim();
     var box = document.getElementById('labDraftBox');
     box.classList.add('show');
-    document.getElementById('labDraftRows').innerHTML = '<div class="miss loading-pulse">Reading report…</div>';
+    document.getElementById('labDraftRows').innerHTML = '<div class="miss loading-pulse">Reading report… longer reports are read in a few page-groups, so this can take a minute.</div>';
     document.getElementById('labDraftNote').textContent = '';
     healthApi.extractLabReport(file, caption).then(function(draft){
       renderLabDraft(draft);
@@ -2920,6 +2935,11 @@
       document.getElementById('labTrendTitle').textContent = testName + (last.unit ? ' (' + last.unit + ')' : '');
       drawHealthTrendChart('labTrendChart', 'labTrendTooltip', 'labTrendChartWrap', series, last.unit ? ' '+last.unit : '',
         'var(--amber)', {low: last.ref_low, high: last.ref_high});
+      var aboutEl = document.getElementById('labTrendAbout');
+      var aboutBits = [];
+      if(last.description) aboutBits.push('<div><b>What it measures:</b> '+last.description+'</div>');
+      if(last.how_to_read) aboutBits.push('<div><b>How to read it:</b> '+last.how_to_read+'</div>');
+      aboutEl.innerHTML = aboutBits.length ? '<div class="lab-trend-about">'+aboutBits.join('')+'</div>' : '';
     });
   }
 
@@ -2937,6 +2957,27 @@
         '</div>';
     });
   });
+
+  // ---- ask about your labs ----
+  var labThread = document.getElementById('labThread');
+  var labAskInput = document.getElementById('labAskInput');
+  function sendLabAsk(){
+    var v = labAskInput.value.trim();
+    if(!v) return;
+    var u = document.createElement('div'); u.className = 'bubble user'; u.textContent = v;
+    labThread.appendChild(u);
+    labAskInput.value = '';
+    var b = document.createElement('div'); b.className = 'bubble bot loading-pulse'; b.textContent = 'Thinking…';
+    labThread.appendChild(b);
+    labThread.scrollTop = labThread.scrollHeight;
+    healthApi.askLab(v).then(function(res){
+      b.classList.remove('loading-pulse');
+      b.innerHTML = res.answer || res.error || 'No answer available.';
+      labThread.scrollTop = labThread.scrollHeight;
+    });
+  }
+  document.getElementById('labAskSend').addEventListener('click', sendLabAsk);
+  labAskInput.addEventListener('keydown', function(e){ if(e.key === 'Enter') sendLabAsk(); });
 
   // ---- other documents ----
   var docUploadInput = document.getElementById('docUploadInput');

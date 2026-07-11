@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS lab_results (
     ref_high REAL,
     ref_text TEXT,
     flag TEXT NOT NULL DEFAULT 'normal',   -- normal | low | high
-    test_date TEXT NOT NULL
+    test_date TEXT NOT NULL,
+    description TEXT,    -- what the test measures, if the report explained it
+    how_to_read TEXT      -- interpretation guidance, if the report gave any
 );
 CREATE INDEX IF NOT EXISTS idx_lab_results_test ON lab_results(test_name);
 CREATE INDEX IF NOT EXISTS idx_lab_results_report ON lab_results(report_id);
@@ -116,30 +118,36 @@ DEFAULT_LAB_CATEGORIES = [
 ]
 
 
-# Columns added after the table's first release -- CREATE TABLE IF NOT
+# Columns added after a table's first release -- CREATE TABLE IF NOT
 # EXISTS won't backfill these onto an already-created table, so any
-# install that ran init_health_db() before segments/AI-summary support
-# existed needs this one-time ALTER TABLE ADD COLUMN pass. Safe to run
-# every startup: it only adds what's actually missing.
-_BODY_COMP_NEW_COLUMNS = [
-    ("segments_json", "TEXT"), ("ai_score", "INTEGER"), ("ai_summary", "TEXT"),
-    ("ai_highlights_json", "TEXT"), ("ai_watch", "TEXT"), ("ai_generated_at", "TEXT"),
-]
+# install that ran init_health_db() before they existed needs this
+# one-time ALTER TABLE ADD COLUMN pass. Safe to run every startup: it
+# only adds what's actually missing.
+_NEW_COLUMNS_BY_TABLE = {
+    "body_comp_entries": [
+        ("segments_json", "TEXT"), ("ai_score", "INTEGER"), ("ai_summary", "TEXT"),
+        ("ai_highlights_json", "TEXT"), ("ai_watch", "TEXT"), ("ai_generated_at", "TEXT"),
+    ],
+    "lab_results": [
+        ("description", "TEXT"), ("how_to_read", "TEXT"),
+    ],
+}
 
 
-def _migrate_body_comp_columns(conn):
+def _migrate_new_columns(conn):
     tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if "body_comp_entries" not in tables:
-        return
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(body_comp_entries)")}
-    for col, col_type in _BODY_COMP_NEW_COLUMNS:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE body_comp_entries ADD COLUMN {col} {col_type}")
+    for table, new_columns in _NEW_COLUMNS_BY_TABLE.items():
+        if table not in tables:
+            continue
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for col, col_type in new_columns:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
 
 
 def init_health_db():
     with db.get_conn() as conn:
-        _migrate_body_comp_columns(conn)
+        _migrate_new_columns(conn)
         conn.executescript(HEALTH_SCHEMA)
         existing = {row["key"] for row in conn.execute("SELECT key FROM lab_categories")}
         for key, label, order_ in DEFAULT_LAB_CATEGORIES:
@@ -288,13 +296,15 @@ def create_lab_report(file_path, mime_type, label=None, raw_extraction=None, log
 
 
 def add_lab_result(report_id, category_key, test_name, value=None, unit=None,
-                    ref_low=None, ref_high=None, ref_text=None, flag="normal", test_date=None):
+                    ref_low=None, ref_high=None, ref_text=None, flag="normal", test_date=None,
+                    description=None, how_to_read=None):
     with db.get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO lab_results (report_id, category_key, test_name, value, unit, "
-            "ref_low, ref_high, ref_text, flag, test_date) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            "ref_low, ref_high, ref_text, flag, test_date, description, how_to_read) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (report_id, category_key, test_name, value, unit, ref_low, ref_high,
-             ref_text, flag, test_date or db.today_str()),
+             ref_text, flag, test_date or db.today_str(), description, how_to_read),
         )
         return cur.lastrowid
 
@@ -325,7 +335,8 @@ def list_lab_results(test_name=None, category_key=None):
         return [dict(row) for row in conn.execute(q, params)]
 
 
-_LAB_RESULT_EDITABLE = {"test_name", "category_key", "value", "unit", "ref_low", "ref_high", "ref_text", "flag", "test_date"}
+_LAB_RESULT_EDITABLE = {"test_name", "category_key", "value", "unit", "ref_low", "ref_high", "ref_text",
+                         "flag", "test_date", "description", "how_to_read"}
 
 
 def update_lab_result(result_id, **fields):

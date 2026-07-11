@@ -8,7 +8,8 @@ already (the flag field), a synthetic score here would imply more
 medical authority than this app has.
 
 Input:  results (list of lab_results rows -- test_name, category_key,
-        value, unit, ref_low, ref_high, ref_text, flag, test_date).
+        value, unit, ref_low, ref_high, ref_text, flag, test_date, and
+        description/how_to_read when the source report included them).
 Output: {"summary": str, "highlights": [str,...], "watch": str|null}
 """
 

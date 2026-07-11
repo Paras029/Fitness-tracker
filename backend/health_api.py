@@ -159,6 +159,13 @@ def labs_summary():
     return jsonify(health_service.get_lab_summary())
 
 
+@health_bp.route("/labs/ask", methods=["POST"])
+def labs_ask():
+    body = request.get_json(force=True)
+    question = body.get("question", "")
+    return jsonify(health_service.answer_lab_question(question))
+
+
 @health_bp.route("/labs/<int:result_id>", methods=["PUT"])
 def put_lab_result(result_id):
     body = request.get_json(force=True)

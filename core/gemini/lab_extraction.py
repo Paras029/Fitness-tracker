@@ -4,12 +4,14 @@ never decides whether a value is in/out of range; that's a deterministic
 comparison against ref_low/ref_high done by health_service.py once the
 draft comes back here.
 
-Input:  pdf_bytes or image_bytes (exactly one), plus its mime_type.
+Input:  pdf_bytes or image_bytes (exactly one) -- may be a full report or
+        just a page-range chunk of one, see health_service.py's chunked
+        extraction for long PDFs -- plus its mime_type.
 Output: {
   "tests": [
     {"test_name": str, "category_hint": str, "value": number|null,
      "unit": str|null, "ref_low": number|null, "ref_high": number|null,
-     "ref_text": str|null},
+     "ref_text": str|null, "description": str|null, "how_to_read": str|null},
     ...
   ],
   "report_date": str|null,   -- YYYY-MM-DD if visible on the report
@@ -47,12 +49,20 @@ _INSTRUCTIONS = (
     "- ref_low / ref_high: the numeric reference range bounds if the report prints one "
     "(e.g. \"70-100\" -> ref_low=70, ref_high=100), else null.\n"
     "- ref_text: the reference range or normal value AS PRINTED, verbatim, if it isn't "
-    "a clean numeric range (e.g. \"Negative\", \"< 5\"), else null.\n\n"
+    "a clean numeric range (e.g. \"Negative\", \"< 5\"), else null.\n"
+    "- description: ONLY if the report itself prints an explanation of what this test "
+    "measures (some reports include a short blurb per test/panel) -- copy/summarize it "
+    "in 1 sentence. Leave null if the report doesn't explain it; do NOT invent one from "
+    "general knowledge here, that happens in a separate step.\n"
+    "- how_to_read: ONLY if the report itself prints guidance on interpreting the value "
+    "(e.g. \"higher indicates inflammation\") -- 1 sentence, verbatim/summarized from the "
+    "report. Leave null if the report doesn't say.\n\n"
     "Also report report_date (the collection/report date on the document, YYYY-MM-DD) "
     "if visible, else null, and notes for anything ambiguous or illegible.\n\n"
     "Respond with JSON only: {\"tests\": [{\"test_name\":str, \"category_hint\":str, "
     "\"value\":number|null, \"unit\":str|null, \"ref_low\":number|null, \"ref_high\":number|null, "
-    "\"ref_text\":str|null}, ...], \"report_date\": str|null, \"notes\": str|null}"
+    "\"ref_text\":str|null, \"description\":str|null, \"how_to_read\":str|null}, ...], "
+    "\"report_date\": str|null, \"notes\": str|null}"
 )
 
 _RESPONSE_SCHEMA = {
@@ -70,6 +80,8 @@ _RESPONSE_SCHEMA = {
                     "ref_low": {"type": "NUMBER", "nullable": True},
                     "ref_high": {"type": "NUMBER", "nullable": True},
                     "ref_text": {"type": "STRING", "nullable": True},
+                    "description": {"type": "STRING", "nullable": True},
+                    "how_to_read": {"type": "STRING", "nullable": True},
                 },
                 "required": ["test_name", "category_hint"],
             },
