@@ -584,6 +584,16 @@
   .bc-summary-card{ padding:18px 20px; }
   .bc-summary-empty{ font-size:12.5px; color:var(--ink-faint); }
 
+  .freshness-chip{
+    display:inline-flex; align-items:center; gap:7px; font-size:12px; padding:6px 10px; border-radius:7px;
+    background:var(--paper-sunk); color:var(--ink-muted); margin-top:10px;
+  }
+  .freshness-chip .fc-dot{ width:7px; height:7px; border-radius:50%; flex:none; }
+  .freshness-chip.good .fc-dot{ background:var(--good); }
+  .freshness-chip.warning .fc-dot{ background:var(--warning); }
+  .freshness-chip.critical .fc-dot{ background:var(--critical); }
+  .freshness-chip b{ color:var(--ink); }
+
   /* generic small icon button for edit/delete actions on list rows --
      reused across body-comp entries, water logs, lab results, supplement
      logs, rather than styling each row type separately. */
@@ -930,6 +940,7 @@
             <div class="card quickadd-card">
               <h3 class="section-label">Log a weigh-in / scan</h3>
               <div class="section-sub">Upload an InBody-style scan or smart-scale screenshot to prefill this, or enter values manually.</div>
+              <div id="bcFreshness"></div>
               <div class="quickadd-row" style="margin-top:12px;">
                 <button class="btn btn-ghost" id="bcUploadBtn" style="flex:1; justify-content:center;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -965,6 +976,7 @@
             <div class="card quickadd-card">
               <h3 class="section-label">Upload a lab report</h3>
               <div class="section-sub">PDF or photo of a blood panel -- Gemini reads every test off it, you review before saving.</div>
+              <div id="labFreshness"></div>
               <div class="quickadd-row" style="margin-top:12px;">
                 <button class="btn btn-ghost" id="labUploadBtn" style="flex:1; justify-content:center;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -2320,6 +2332,7 @@
       return fetch('/api/health/body-comp/extract', {method:'POST', body: fd}).then(r=>r.json());
     },
     bodyCompSummary: function(entryId){ return fetch('/api/health/body-comp/' + entryId + '/summary', {method:'POST'}).then(r=>r.json()); },
+    bodyCompFreshness: function(){ return fetch('/api/health/body-comp/freshness').then(r=>r.json()); },
     updateBodyComp: function(id, body){ return fetch('/api/health/body-comp/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     deleteBodyComp: function(id){ return fetch('/api/health/body-comp/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labCategories: function(){ return fetch('/api/health/lab-categories').then(r=>r.json()); },
@@ -2341,6 +2354,7 @@
     updateLabResult: function(id, body){ return fetch('/api/health/labs/' + id, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r=>r.json()); },
     deleteLabResult: function(id){ return fetch('/api/health/labs/' + id, {method:'DELETE'}).then(r=>r.json()); },
     labSummary: function(){ return fetch('/api/health/labs/summary', {method:'POST'}).then(r=>r.json()); },
+    labFreshness: function(){ return fetch('/api/health/labs/freshness').then(r=>r.json()); },
     documents: function(){ return fetch('/api/health/documents').then(r=>r.json()); },
     uploadDocument: function(file){
       var fd = new FormData(); fd.append('file', file);
@@ -2362,6 +2376,32 @@
 
   var TRASH_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>';
   var EDIT_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  // ---- freshness chips (BCA / labs "time to redo this?" indicator) ----
+  function renderFreshnessChip(elId, data, noun){
+    var el = document.getElementById(elId);
+    if(!el) return;
+    if(!data || data.last_date == null){
+      el.innerHTML = '';
+      return;
+    }
+    var frac = data.days_since / data.interval_days;
+    var level = data.stale ? 'critical' : (frac >= 0.7 ? 'warning' : 'good');
+    var flaggedNote = data.flagged ? ' -- shortened to ' + data.interval_days + ' days since something was flagged last time' : '';
+    var text;
+    if(data.stale){
+      text = 'Last ' + noun + ' <b>' + data.days_since + ' days ago</b> -- overdue, worth redoing' + flaggedNote + '.';
+    } else {
+      text = 'Last ' + noun + ' <b>' + data.days_since + ' days ago</b> -- next around <b>' + data.next_due_date + '</b>' + flaggedNote + '.';
+    }
+    el.innerHTML = '<div class="freshness-chip ' + level + '"><span class="fc-dot"></span><span>' + text + '</span></div>';
+  }
+  function loadBodyCompFreshness(){
+    healthApi.bodyCompFreshness().then(function(data){ renderFreshnessChip('bcFreshness', data, 'scan'); });
+  }
+  function loadLabFreshness(){
+    healthApi.labFreshness().then(function(data){ renderFreshnessChip('labFreshness', data, 'panel'); });
+  }
 
   var healthState = {
     booted: false, labCategories: [], labResults: [], bodyCompEntries: [], segmentMetric: 'fat', selectedSegment: null,
@@ -2433,6 +2473,7 @@
   }
 
   function loadBodyComp(){
+    loadBodyCompFreshness();
     return healthApi.bodyCompList().then(function(entries){
       healthState.bodyCompEntries = entries;
       var series = entries.slice(0, 30).filter(function(e){ return e.weight_kg != null; })
@@ -2747,6 +2788,7 @@
 
   // ---- labs: grouped display + trend ----
   function loadLabResults(){
+    loadLabFreshness();
     healthApi.labResults().then(function(results){
       healthState.labResults = results;
       renderLabResults();

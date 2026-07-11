@@ -35,6 +35,11 @@ def get_body_comp():
     return jsonify(health_db.list_body_comp_entries(limit=limit))
 
 
+@health_bp.route("/body-comp/freshness", methods=["GET"])
+def get_body_comp_freshness():
+    return jsonify(health_service.get_body_comp_freshness())
+
+
 @health_bp.route("/body-comp", methods=["POST"])
 def post_body_comp():
     body = request.get_json(force=True)
@@ -168,6 +173,11 @@ def delete_lab_result(result_id):
 @health_bp.route("/labs/reports", methods=["GET"])
 def get_lab_reports():
     return jsonify(health_db.list_lab_reports())
+
+
+@health_bp.route("/labs/freshness", methods=["GET"])
+def get_lab_freshness():
+    return jsonify(health_service.get_lab_freshness())
 
 
 @health_bp.route("/labs/reports/<int:report_id>", methods=["DELETE"])

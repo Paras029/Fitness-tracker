@@ -5,8 +5,48 @@ directly, mirroring the nutrition side's logging_service.py split.
 """
 
 import difflib
+from datetime import datetime, timedelta
 
 from core import db, health_db
+
+# How often a BCA scan / lab panel should reasonably be redone. Labs get a
+# shorter interval if the latest panel had anything flagged out of range --
+# that's worth rechecking sooner than a routine "everything's normal" panel.
+BODY_COMP_FRESHNESS_DAYS = 30
+LAB_FRESHNESS_DAYS = 90
+LAB_FRESHNESS_DAYS_IF_FLAGGED = 30
+
+
+def _freshness(last_date, interval_days):
+    if last_date is None:
+        return {"last_date": None, "days_since": None, "interval_days": interval_days,
+                "stale": None, "next_due_date": None}
+    days_since = (datetime.strptime(db.today_str(), "%Y-%m-%d")
+                  - datetime.strptime(last_date, "%Y-%m-%d")).days
+    next_due = (datetime.strptime(last_date, "%Y-%m-%d") + timedelta(days=interval_days)).strftime("%Y-%m-%d")
+    return {
+        "last_date": last_date, "days_since": days_since, "interval_days": interval_days,
+        "stale": days_since >= interval_days, "next_due_date": next_due,
+    }
+
+
+def get_body_comp_freshness():
+    entries = health_db.list_body_comp_entries(limit=1)
+    last_date = entries[0]["log_date"] if entries else None
+    return _freshness(last_date, BODY_COMP_FRESHNESS_DAYS)
+
+
+def get_lab_freshness():
+    reports = health_db.list_lab_reports()
+    if not reports:
+        return _freshness(None, LAB_FRESHNESS_DAYS)
+    latest = reports[0]  # list_lab_reports() orders by uploaded_at DESC
+    results = health_db.list_lab_results()
+    flagged = any(r["report_id"] == latest["id"] and r["flag"] != "normal" for r in results)
+    interval = LAB_FRESHNESS_DAYS_IF_FLAGGED if flagged else LAB_FRESHNESS_DAYS
+    freshness = _freshness(latest["log_date"], interval)
+    freshness["flagged"] = flagged
+    return freshness
 
 
 def _closest_category_key(hint, categories):
